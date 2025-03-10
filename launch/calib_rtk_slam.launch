@@ -1,0 +1,7 @@
+<launch>
+    <node name="rtk_slam_calibrator" pkg="hm_rtk" type="calib_rtk_slam_node" output="screen">
+        <param name="ex_rtk_slam_x" value="0.03"/>
+        <param name="ex_rtk_slam_y" value="-0.01"/>  <!-- 必需项，高程方向退化，不参与优化 -->
+        <param name="ex_rtk_slam_z" value="-0.24"/>
+    </node>
+</launch>

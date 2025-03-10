@@ -1,0 +1,6 @@
+[submodule "3rdParty/gnss_comm"]
+	path = 3rdParty/gnss_comm
+	url = https://github.com/HKUST-Aerial-Robotics/gnss_comm.git
+[submodule "3rdParty/ntrip"]
+	path = 3rdParty/ntrip
+	url = https://github.com/ybzwyrcld/ntrip.git

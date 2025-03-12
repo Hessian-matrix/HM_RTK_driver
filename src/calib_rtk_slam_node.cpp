@@ -17,6 +17,7 @@
 #include "HM_RTK/trajectory_aligner.hpp"
 #include "gnss_comm/gnss_utility.hpp"
 
+std::string package_path = "";
 class RTKSlamCalibrator {
 public:
     RTKSlamCalibrator(ros::NodeHandle& nh, const Eigen::Vector3d& init_ex_rtk_slam)
@@ -47,6 +48,24 @@ private:
     }
 
     void optimizationLoop() {
+        // Get the package path and create a directory for results
+        std::string results_dir = package_path + "/results";
+        std::string results_path = results_dir + "/rtk_slam_calib_results.csv";
+        
+        // Create the results directory if it doesn't exist
+        int dir_status = system(("mkdir -p " + results_dir).c_str());
+        if (dir_status != 0) {
+            ROS_WARN("Failed to create results directory. Using current directory instead.");
+            results_path = "rtk_slam_calib_results.csv";
+        }
+        
+        // Open the file with the full path
+        std::ofstream outResults(results_path);
+        ROS_INFO("Saving results to: %s", results_path.c_str());
+        
+        outResults << "n,converge,yaw,ex_x,ex_y,ex_z,err_ave,err_max,directional_distribution\n";
+
+        std::vector<Eigen::Vector3d> exs_rtk_slam;
         while (ros::ok() && !stop_optimization_) {
             // 1. 数据同步：将队列数据转到临时vector中
             std::vector<sensor_msgs::NavSatFix> rtk_data;
@@ -146,12 +165,15 @@ private:
                     sum_direction += d;
                 }
                 double angle_diff = sum_direction.norm()/R_world_cam.size();
+                exs_rtk_slam.emplace_back(ex);
 
-                printf("n,%d,converge,%d,yaw,%f,ex,%f,%f,%f,anchor_diff,%f,%f,%f,error,%f,%f,%f\n",
+                printf("n,%d,converge,%d,yaw,%f,ex,%f,%f,%f,error,%f,%f,%f\n",
                     static_cast<int>(rtk_trajectory.size()),
                     isConverged, yaw, ex.x(), ex.y(), ex.z(),
-                    diff.x(), diff.y(), diff.z(), 
                     error.first, error.second, angle_diff);
+                outResults << rtk_trajectory.size() << "," << isConverged << "," << yaw << ","
+                           << ex.x() << "," << ex.y() << "," << ex.z() << ","
+                           << error.first << "," << error.second << "," << angle_diff << "\n" << std::flush;
 
                 // 如有需要，可发布结果或写入日志
                 if(false){
@@ -186,6 +208,14 @@ private:
 
             std::this_thread::sleep_for(std::chrono::milliseconds(100)); // 优化频率
         }
+        outResults.close();
+        Eigen::Vector3d ex_ave = Eigen::Vector3d::Zero();
+        if(!exs_rtk_slam.empty()){
+            for(const auto& ex : exs_rtk_slam) ex_ave += ex;
+            ex_ave /= exs_rtk_slam.size();
+        }
+        std::cout << "ex_ave: " << ex_ave.transpose() << ", size=" << exs_rtk_slam.size() << std::endl;
+        std::cout << "results saved to: " << results_path << std::endl;
     }
 
 private:
@@ -213,6 +243,7 @@ int main(int argc, char** argv) {
     nh.param<double>("ex_rtk_slam_x", x, 0.03);
     nh.param<double>("ex_rtk_slam_y", y, -0.13);
     nh.param<double>("ex_rtk_slam_z", z, -0.21);
+    nh.param<std::string>("package_path", package_path, "");
     Eigen::Vector3d init_ex_rtk_slam(x,y,z);
     std::cout << "init_ex_rtk_slam: " << init_ex_rtk_slam.transpose() << std::endl;
     RTKSlamCalibrator calibrator(nh, init_ex_rtk_slam);

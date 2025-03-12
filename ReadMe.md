@@ -3,6 +3,8 @@
 - 驱动层，配合viobot2使用。
 - RTK与Viobot2的外参标定工具
 
+使用流程：先基于外参标定工具，进行外参标定。然后再使用RTK驱动和算法。
+
 使用本仓库 搭配 viobot2 使用，viobot2可以输出融合RTK后的轨迹`/baton/stereo3/fusion_odom` 和 `/baton/stereo3/fusion_path`。
 
 ## preinstall
@@ -25,9 +27,7 @@
     catkin_make
 ```
 
-## RTK驱动
-
-### 硬件时间同步
+## 硬件时间同步
 在接入RTK时，需要viobot2与RTK进行时间同步。
 - 如果viobot2使用自带GNSS模块已链接天线，viobot2已自动与GNSS进行时间同步。无需其他操作。
 - 如果viobot2没有连接GNSS天线，就需要将RTK的PPS信号与viobot2进行时间同步。基本通讯是通过尾板的I2C接口的复用。
@@ -48,15 +48,6 @@
         reboot
     ```
     - 检查：`ls /dev/i2c*` 有/dev/i2c-6 证明已经可以
-
-### 使用
-- 使用前先确定已硬件时间同步
-- 配置RTK的外参到src/HM_RTK_driver/launch/HM_RTK.launch中的ex_rtk_slam_x、ex_rtk_slam_y、ex_rtk_slam_z
-- 配置RTK需要的Ntrip服务。
-- 运行 ` roslaunch hm_rtk HM_RTK.launch `
-  - 输出`serial try to write:XXXX, real write=XXXX, drop=0` 则RTK串口和NTrip正常
-  - 输出的NMEA（GGA）信息，可以查看目前定位结果、状态.
-
 
 ## 外参标定工具（参考）
 我们使用的是单RTK模组进行融合，外参标定只需要标定2个参数：水平平移。
@@ -80,15 +71,41 @@ $$
 - 运行RTK的驱动算法， 用于发布RTK轨迹
     ` roslaunch hm_rtk HM_RTK.launch `
     - 保证RTK是固定解：
-      ` rostopic echo /rtk_navsatfix` 的 status = 2
+      ` rostopic echo /baton/rtk` 的 status = 2
+- 配置初始外参
+  - 配置src/HM_RTK/launch/calib_rtk_slam.launch 文件，设定外参初值。
+  - 坐标系：以左目为原点，XYZ-右下上。
+  - 由于高程方向不可观，所以y轴方向必须设定初值（可手动测量），标定过程固定，不参与优化。
 - 在开阔场景，保证RTK是固定解的情况下, 运行标定算法
   ` roslaunch hm_rtk calib_rtk_slam.launch `
-- 快速绕8运动（或随机运动），保证在10s时间内包含不同方向的运动。（避免静止或直线运动）
-- 会实时输出标定结果。
-- 也可以将标定结果导出到文件，用Excel查看外参标定。
+- **快速**绕8运动（或随机运动），保证在10s时间内包含不同方向的运动。（避免静止或直线运动）
+- 会实时输出标定结果，最后也会输出标定均值，具体结果也导出到了文件。
+- 也可以将标定结果文件，用Excel查看外参标定。
 ![alt text](assets/rtk_ex_excel.png)
 
 ### 注意事项
 
 - 随机多方向快速运动，避免静止或直线运动。推荐绕8运动，保证标定精度的关键
 - 10s内保证包含多方向运动，算法截取最新的10s数据进行标定
+
+
+## RTK驱动
+
+### 使用
+- 使用前先确定已硬件时间同步
+- 配置src/HM_RTK_driver/launch/HM_RTK.launch
+  - RTK的数据端口和波特率
+  - RTK需要的Ntrip服务（又称Cors账号）。[Ntrip简介](https://blog.csdn.net/weixin_46014563/article/details/120450726) ，推荐使用千寻的Ntrip服务
+  - RTK的外参：ex_rtk_slam_x、ex_rtk_slam_y、ex_rtk_slam_z， 坐标系: 以左目为原点, XYZ-右下上
+- 运行 ` roslaunch hm_rtk HM_RTK.launch `
+  - 输出`serial try to write:XXXX, real write=XXXX, drop=0` 则RTK串口和NTrip正常
+  - 输出的NMEA（GGA）信息，可以查看目前定位结果、状态.
+  - 会输出两个topic：
+    - /rtk_extrinsic 配置的外参
+    - /rtk_nmea      收到的NMEA的GGA语句
+- 运行后，再跑viobot2上位机算法，则将RTK与VIO轨迹进行耦合。
+  - 需初始化，一般在RTK固定解后运动10m以上距离即可初始化成功。
+  - 在上位机界面不显现。但会播发3个topic，可参考：
+    - /baton/stereo3/fusion_odom  融合后的odometry，SLAM局部坐标系
+    - /baton/stereo3/fusion_path  融合后的历史轨迹，SLAM局部坐标系
+    - /baton/stereo3/rtk_path     RTK历史轨迹，SLAM局部坐标系

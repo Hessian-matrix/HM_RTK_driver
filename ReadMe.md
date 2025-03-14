@@ -3,9 +3,12 @@
 - 驱动层，配合viobot2使用。
 - RTK与Viobot2的外参标定工具
 
-使用流程：先基于外参标定工具，进行外参标定。然后再使用RTK驱动和算法。
-
-使用本仓库 搭配 viobot2 使用，viobot2可以输出融合RTK后的轨迹`/baton/stereo3/fusion_odom` 和 `/baton/stereo3/fusion_path`。
+使用流程：先基于外参标定工具，进行RTK与viobot2外参标定。然后再使用RTK驱动发布RTK相关话题：
+  - `/rtk_extrinsic`  用于发布RTK到viobot2的外参，给viobot2使用。
+  - `/rtk_nmea`       用于将NMEA的GGA数据字符串发送给viobot2使用。
+搭配 viobot2 使用，viobot2可以输出融合RTK后的轨迹
+  - `/baton/stereo3/fusion_odom`  融合后的里程计信息
+  - `/baton/stereo3/fusion_path`  融合后的历史轨迹
 
 ## preinstall
 - ros 
@@ -53,6 +56,7 @@
 我们使用的是单RTK模组进行融合，外参标定只需要标定2个参数：水平平移。
 - 单RTK没有朝向信息， ECEF坐标系固定东北天
 - 对于一般小车场景应用标定来说，采用随机水平移动/绕8移动 标定，高程方向不可观，优化时固定。
+- 当整个硬件已设计完毕，可从硬件结构图来获取外参结果，无需标定。
 
 ### 标定原理
 采用水平快速随机运动同时采集： viobot2轨迹(左目到世界坐标系的变换) + RTK轨迹（ecef坐标系）， 进行两者轨迹对齐，来进行外参标定。
@@ -73,8 +77,8 @@ $$
     - 保证RTK是固定解：
       ` rostopic echo /baton/rtk` 的 status = 2
 - 配置初始外参
-  - 配置src/HM_RTK/launch/calib_rtk_slam.launch 文件，设定外参初值。
-  - 坐标系：以左目为原点，XYZ-右下上。
+  - 配置src/HM_RTK_driver/launch/calib_rtk_slam.launch 文件，设定外参初值。
+  - 坐标系：以左目为原点，XYZ-右下前。
   - 由于高程方向不可观，所以y轴方向必须设定初值（可手动测量），标定过程固定，不参与优化。
 - 在开阔场景，保证RTK是固定解的情况下, 运行标定算法
   ` roslaunch hm_rtk calib_rtk_slam.launch `
@@ -85,7 +89,7 @@ $$
 
 ### 注意事项
 
-- 随机多方向快速运动，避免静止或直线运动。推荐绕8运动，保证标定精度的关键
+- 随机多方向快速运动，避免静止或直线运动，推荐绕8运动。
 - 10s内保证包含多方向运动，算法截取最新的10s数据进行标定
 
 
@@ -96,14 +100,14 @@ $$
 - 配置src/HM_RTK_driver/launch/HM_RTK.launch
   - RTK的数据端口和波特率
   - RTK需要的Ntrip服务（又称Cors账号）。[Ntrip简介](https://blog.csdn.net/weixin_46014563/article/details/120450726) ，推荐使用千寻的Ntrip服务
-  - RTK的外参：ex_rtk_slam_x、ex_rtk_slam_y、ex_rtk_slam_z， 坐标系: 以左目为原点, XYZ-右下上
+  - RTK的外参：ex_rtk_slam_x、ex_rtk_slam_y、ex_rtk_slam_z， 坐标系: 以左目为原点, XYZ-右下前
 - 运行 ` roslaunch hm_rtk HM_RTK.launch `
   - 输出`serial try to write:XXXX, real write=XXXX, drop=0` 则RTK串口和NTrip正常
   - 输出的NMEA（GGA）信息，可以查看目前定位结果、状态.
   - 会输出两个topic：
     - /rtk_extrinsic 配置的外参
     - /rtk_nmea      收到的NMEA的GGA语句
-- 运行后，再跑viobot2上位机算法，则将RTK与VIO轨迹进行耦合。
+- 运行后，再跑viobot2上位机算法，打开RTK(操作-设置-GNSS-勾选RTK选项，设置后需重启)，打开算法，则将RTK与VIO轨迹进行耦合。
   - 需初始化，一般在RTK固定解后运动10m以上距离即可初始化成功。
   - 在上位机界面不显现。但会播发3个topic，可参考：
     - /baton/stereo3/fusion_odom  融合后的odometry，SLAM局部坐标系

@@ -13,9 +13,6 @@ find_package(catkin REQUIRED COMPONENTS
 add_subdirectory(3rdParty/ntrip)
 add_subdirectory(3rdParty/gnss_comm)
 
-set(Eigen3_DIR "/home/ll/C/Libs/Eigen/eigen-3.4.0/install/share/eigen3/cmake")
-set(glog_DIR "/home/ll/C/Libs/glog/glog-0.6.0/install/lib/cmake/glog/")
-set(Ceres_DIR "/home/ll/C/Libs/ceres-solver/ceres-solver-2.2.0/install_eigen_340/lib/cmake/Ceres")
 find_package(Eigen3 REQUIRED)
 find_package(Glog REQUIRED)
 find_package(Ceres REQUIRED)

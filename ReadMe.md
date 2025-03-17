@@ -6,9 +6,11 @@
 使用流程：先基于外参标定工具，进行RTK与viobot2外参标定。然后再使用RTK驱动发布RTK相关话题：
   - `/rtk_extrinsic`  用于发布RTK到viobot2的外参，给viobot2使用。
   - `/rtk_nmea`       用于将NMEA的GGA数据字符串发送给viobot2使用。
+
 搭配 viobot2 使用，viobot2可以输出融合RTK后的轨迹
-  - `/baton/stereo3/fusion_odom`  融合后的里程计信息
-  - `/baton/stereo3/fusion_path`  融合后的历史轨迹
+  - `/baton/stereo3/fusion_odom`  融合后的里程计信息，在SLAM局部坐标系
+  - `/baton/stereo3/fusion_path`  融合后的历史轨迹, 在SLAM局部坐标系
+  - `/baton/stereo3/rtk_path`     RTK历史轨迹，在SLAM局部坐标系
 
 ## preinstall
 - ros 
@@ -78,7 +80,7 @@ $$
       ` rostopic echo /baton/rtk` 的 status = 2
 - 配置初始外参
   - 配置src/HM_RTK_driver/launch/calib_rtk_slam.launch 文件，设定外参初值。
-  - 坐标系：以左目为原点，XYZ-右下前。
+  - 坐标系：以左目为原点，XYZ-右下前。即 T_camL<-RTK
   - 由于高程方向不可观，所以y轴方向必须设定初值（可手动测量），标定过程固定，不参与优化。
 - 在开阔场景，保证RTK是固定解的情况下, 运行标定算法
   ` roslaunch hm_rtk calib_rtk_slam.launch `
@@ -105,11 +107,11 @@ $$
   - 输出`serial try to write:XXXX, real write=XXXX, drop=0` 则RTK串口和NTrip正常
   - 输出的NMEA（GGA）信息，可以查看目前定位结果、状态.
   - 会输出两个topic：
-    - /rtk_extrinsic 配置的外参
+    - /rtk_extrinsic 配置的外参, T_camL<-RTK
     - /rtk_nmea      收到的NMEA的GGA语句
 - 运行后，再跑viobot2上位机算法，打开RTK(操作-设置-GNSS-勾选RTK选项，设置后需重启)，打开算法，则将RTK与VIO轨迹进行耦合。
   - 需初始化，一般在RTK固定解后运动10m以上距离即可初始化成功。
   - 在上位机界面不显现。但会播发3个topic，可参考：
-    - /baton/stereo3/fusion_odom  融合后的odometry，SLAM局部坐标系
-    - /baton/stereo3/fusion_path  融合后的历史轨迹，SLAM局部坐标系
-    - /baton/stereo3/rtk_path     RTK历史轨迹，SLAM局部坐标系
+    - `/baton/stereo3/fusion_odom`  融合后的odometry，在SLAM局部坐标系下
+    - `/baton/stereo3/fusion_path`  融合后的历史轨迹，在SLAM局部坐标系下
+    - `/baton/stereo3/rtk_path`     RTK历史轨迹，在SLAM局部坐标系下

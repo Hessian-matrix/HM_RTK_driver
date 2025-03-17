@@ -11,7 +11,7 @@
     <arg name="pub_rtk_nmea_topic" default="/rtk_nmea"/>           <!-- 解析发布的NMEA的topic -->
     <arg name="pub_rtk_ex_pose_topic" default="/rtk_extrinsic"/>   <!-- 解析发布的rtk2camL 外参的topic -->
 
-    <!-- 外参配置，RTK在左目坐标系（XYZ-右下前）下的外参 -->
+    <!-- 外参配置，RTK在左目坐标系（XYZ-右下前）下的外参，即T_camL<-RTK -->
     <arg name="ex_rtk_slam_x" default="0.2"/>  
     <arg name="ex_rtk_slam_y" default="0.3"/>
     <arg name="ex_rtk_slam_z" default="0.5"/>

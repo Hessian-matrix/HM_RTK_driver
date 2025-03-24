@@ -11,7 +11,6 @@ find_package(catkin REQUIRED COMPONENTS
 
 #ntrip
 add_subdirectory(3rdParty/ntrip)
-add_subdirectory(3rdParty/gnss_comm)
 
 find_package(Eigen3 REQUIRED)
 find_package(Glog REQUIRED)
@@ -30,6 +29,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
   3rdParty/gnss_comm/include
+  3rdParty/gnss_comm/include/gnss_comm
 )
 add_executable(rtk_driver_node
   src/rtk_driver_node.cpp 
@@ -41,5 +41,6 @@ target_link_libraries(rtk_driver_node ${catkin_LIBRARIES} ntrip)
 add_executable(calib_rtk_slam_node 
   src/calib_rtk_slam_node.cpp 
   src/trajectory_aligner.cpp
+  3rdParty/gnss_comm/src/gnss_utility.cpp
 )
-target_link_libraries(calib_rtk_slam_node ${catkin_LIBRARIES} ${CERES_LIBRARIES} gnss_comm glog::glog)
+target_link_libraries(calib_rtk_slam_node ${catkin_LIBRARIES} ${CERES_LIBRARIES} glog::glog)

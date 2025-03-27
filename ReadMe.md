@@ -35,24 +35,11 @@
 ## 硬件时间同步
 在接入RTK时，需要viobot2与RTK进行时间同步。
 - 如果viobot2使用自带GNSS模块已链接天线，viobot2已自动与GNSS进行时间同步。无需其他操作。
-- 如果viobot2没有连接GNSS天线，就需要将RTK的PPS信号与viobot2进行时间同步。基本通讯是通过尾板的I2C接口的复用。
-  ![alt text](assets/I2C_PPS_define.png)
-  - 将尾板I2C6 复用成 PPS，可复用两路PPS， 电平为3.3V，注意同步设备与viobot要共地。
-    ``` bash
-        # 进root账户
-        cp kernel/I2CtoPPS /opt/
-        dd if=/opt/I2CtoPPS  of=/dev/mmcblk0p3 # 不要断电，直接命令重启
-        reboot
-    ```
-    - 检查：`ls /dev/pps*` 、 `apt install pps-tools & ppstest /dev/pps2`， 有正常输出即可
-  - 恢复：
-    ``` bash
-        # 进root账户
-        cp kernel/PPStoI2C /opt/
-        dd if=/opt/PPStoI2C  of=/dev/mmcblk0p3 # 不要断电，直接命令重启
-        reboot
-    ```
-    - 检查：`ls /dev/i2c*` 有/dev/i2c-6 证明已经可以
+- 如果viobot2没有连接GNSS天线，就需要将RTK的PPS信号与viobot2进行时间同步。主板底下有一个10pins的排线接口，
+![alt text](assets/interface.jpg)
+
+- 定义如下，其中包含了两个串口接口uart3和uart4，以及PPS信号线。需要接PPS的只要把PPS接好并共地即可。
+![alt text](assets/interface_define.png)
 
 ## 外参标定工具（参考）
 我们使用的是单RTK模组进行融合，外参标定只需要标定2个参数：水平平移。

@@ -3,10 +3,10 @@
     <arg name="rtk_baudrate" default="460800"/>         <!-- RTK NMEA输入的波特率 -->
 
     <arg name="ntrip_ip" default="203.107.45.154"/>     <!-- Ntrip Url -->
-    <arg name="ntrip_port" default="8003"/>             <!-- Ntrip port, WGS84 -->
+    <arg name="ntrip_port" default="8002"/>             <!-- Ntrip port, WGS84 -->
     <arg name="ntrip_user" default="qxvswp0010094"/>    <!-- Ntrip 用户名、账号 -->
-    <arg name="ntrip_passwd" default="c035c33"/>        <!-- Ntrip 密码 -->
-    <arg name="ntrip_mountpoint" default="RTCM32_GGB"/>       <!-- Ntrip 挂载点 -->
+    <arg name="ntrip_passwd" default="XXXXXX"/>        <!-- Ntrip 密码 -->
+    <arg name="ntrip_mountpoint" default="AUTO"/>       <!-- Ntrip 挂载点 -->
 
     <arg name="pub_rtk_nmea_topic" default="/rtk_nmea"/>           <!-- 解析发布的NMEA的topic -->
     <arg name="pub_rtk_ex_pose_topic" default="/rtk_extrinsic"/>   <!-- 解析发布的rtk2camL 外参的topic -->

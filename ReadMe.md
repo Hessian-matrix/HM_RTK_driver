@@ -72,7 +72,7 @@ $$
 - 在开阔场景，保证RTK是固定解的情况下, 运行标定算法
   ` roslaunch hm_rtk calib_rtk_slam.launch `
 - **快速**绕8运动（或随机运动），保证在10s时间内包含不同方向的运动。（避免静止或直线运动）
-- 会实时输出标定结果，最后也会输出标定均值，具体结果也导出到了文件。
+- 会实时输出标定结果，最后也会输出标定均值，具体结果也导出到了文件(HM_RTK/results/rtk_slam_calib_results.csv)。
 - 也可以将标定结果文件，用Excel查看外参标定。
 ![alt text](assets/rtk_ex_excel.png)
 
@@ -98,7 +98,10 @@ $$
     - /rtk_nmea      收到的NMEA的GGA语句
 - 运行后，再跑viobot2上位机算法，打开RTK(操作-设置-GNSS-勾选RTK选项，设置后需重启)，打开算法，则将RTK与VIO轨迹进行耦合。
   - 需初始化，一般在RTK固定解后运动10m以上距离即可初始化成功。
-  - 在上位机界面不显现。但会播发3个topic，可参考：
+    - 固定解查看依据(二选一即可):
+      1. rostopic echo /rtk_nmea 的 $GPGGA,<1>,<2>,<3>,<4>,<5>,<6>,<7>,<8>,<9>,M,<10>,M,<11>,<12>*xx<CR><LF> 当<6>=4时是固定解
+      2. rostopic echo /baton/rtk 的 status = 2
+  - 融合结果,在上位机界面不显现。但会播发3个topic，可在rviz等查看, 参考：
     - `/baton/stereo3/fusion_odom`  融合后的odometry，在SLAM局部坐标系下
     - `/baton/stereo3/fusion_path`  融合后的历史轨迹，在SLAM局部坐标系下
     - `/baton/stereo3/rtk_path`     RTK历史轨迹，在SLAM局部坐标系下

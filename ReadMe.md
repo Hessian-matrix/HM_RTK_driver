@@ -11,6 +11,19 @@
   - `/baton/stereo3/fusion_odom`  融合后的里程计信息，在SLAM局部坐标系
   - `/baton/stereo3/fusion_path`  融合后的历史轨迹, 在SLAM局部坐标系
   - `/baton/stereo3/rtk_path`     RTK历史轨迹，在SLAM局部坐标系
+  - `/baton/stereo3/lla_odom`     融合后的odometry，XYZ是经纬高（单位:度、米），朝向是在东北天坐标系下
+
+注意：
+  - 本教程数据流： 
+    - Ntrip： 网络→viobot2 → RTK 串口
+    - NMEA: RTK串口 → viobot2 
+  - 如果RTK已经配置好了Ntrip服务，则只需要：
+    - NMEA: RTK串口 → viobot2 
+  - 如有其他需求，代码已开源，可以自行修改，驱动最终只需要满足：
+    - RTK与viobot2 进行时间同步
+    - 能发布两个话题：
+      - `/rtk_extrinsic`  用于发布RTK到viobot2的外参，给viobot2使用。
+      - `/rtk_nmea`       用于将NMEA的GGA数据字符串发送给viobot2使用。
 
 ## preinstall
 - ros 
@@ -43,8 +56,9 @@
 
 ## 外参标定工具（参考）
 我们使用的是单RTK模组进行融合，外参标定只需要标定2个参数：水平平移。
-- 单RTK没有朝向信息， ECEF坐标系固定东北天
+- 单RTK没有朝向信息， ECEF坐标系朝向固定
 - 对于一般小车场景应用标定来说，采用随机水平移动/绕8移动 标定，高程方向不可观，优化时固定。
+- 对于无人机用户，可以自己设计修改标定程序，满足3DOF外参标定。（同时可欢迎适配好的小伙伴来commit ~ ）
 - 当整个硬件已设计完毕，可从硬件结构图来获取外参结果，无需标定。
 
 ### 标定原理
@@ -96,12 +110,13 @@ $$
   - 会输出两个topic：
     - /rtk_extrinsic 配置的外参, T_camL<-RTK
     - /rtk_nmea      收到的NMEA的GGA语句
-- 运行后，再跑viobot2上位机算法，打开RTK(操作-设置-GNSS-勾选RTK选项，设置后需重启)，打开算法，则将RTK与VIO轨迹进行耦合。
+- 运行后，再跑viobot2上位机算法。打开RTK(操作-设置-GNSS-勾选RTK选项，设置后需重启设备)，打开算法，则将RTK与VIO轨迹进行耦合。
   - 需初始化，一般在RTK固定解后运动10m以上距离即可初始化成功。
     - 固定解查看依据(二选一即可):
-      1. rostopic echo /rtk_nmea 的 $GPGGA,<1>,<2>,<3>,<4>,<5>,<6>,<7>,<8>,<9>,M,<10>,M,<11>,<12>*xx<CR><LF> 当<6>=4时是固定解
-      2. rostopic echo /baton/rtk 的 status = 2
-  - 融合结果,在上位机界面不显现。但会播发3个topic，可在rviz等查看, 参考：
+      1. rostopic echo /baton/rtk 的 status = 2
+      2. rostopic echo /rtk_nmea 的 $GPGGA,<1>,<2>,<3>,<4>,<5>,<6>,<7>,<8>,<9>,M,<10>,M,<11>,<12>*xx<CR><LF> 当<6>=4时是固定解
+  - 融合结果,在上位机界面不显现。但会播发以下topic，可在rviz等查看, 参考：
     - `/baton/stereo3/fusion_odom`  融合后的odometry，在SLAM局部坐标系下
     - `/baton/stereo3/fusion_path`  融合后的历史轨迹，在SLAM局部坐标系下
     - `/baton/stereo3/rtk_path`     RTK历史轨迹，在SLAM局部坐标系下
+    - `/baton/stereo3/lla_odom`     融合后的odometry，XYZ是经纬高，朝向在东北天坐标系下

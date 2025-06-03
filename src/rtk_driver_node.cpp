@@ -112,7 +112,7 @@ int main(int argc, char **argv) {
     stop_ex_publish.store(false);
     std::thread ex_publish_thread(publishExPose);
 
-
+    int f_count=0;
     while(ros::ok())
     {
         try {
@@ -134,6 +134,14 @@ int main(int argc, char **argv) {
                         std::cerr<<"NMEA Sentence Check Failed!"<<std::endl;
                         continue;
                     }
+                    
+                    if(nmea.find("RMC") != std::string::npos)
+                    {
+                        std_msgs::String msg;
+                        msg.data = nmea;
+                        pub_rtk_nmea.publish(msg);
+                        std::cout<<nmea;
+                    }                    
 
                     if (nmea.find("GGA") != std::string::npos){
                         sensor_msgs::NavSatFix gnss_pos_msg;

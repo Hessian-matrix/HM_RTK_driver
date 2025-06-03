@@ -62,19 +62,20 @@ namespace Hessian{
             gga_tm.tm_sec = std::stoi(time.substr(4, 2));
             seconds = std::stod(time.substr(4)) - gga_tm.tm_sec;
         } catch(const std::exception& e) {
-            return -1.0;
+            std::cerr << "Invalid GGA time format: " << time << std::endl;
+            return -2.0;
         }
         time_t gga_time = mktime(&gga_tm) + local_offset;
         double gga_time_local = gga_time + seconds;
     
         // Calculate the difference between the current time and the GGA time
         double time_difference = std::difftime(gga_time, now_time);
-        // std::cout << std::setprecision(16) << "gga time=" << gga_time_local << " now=" << now_time << ", timezone_offset=" << local_offset << ", diff=" << time_difference << " str=" << time << std::endl; 
+        std::cout << std::setprecision(16) << "gga time=" << gga_time_local << " now=" << now_time << ", timezone_offset=" << local_offset << ", diff=" << time_difference << " str=" << time << std::endl; 
     
         // Ensure the time difference is not excessively large
-        if (std::abs(time_difference) > 60) {
-            return -1.0; // Invalid time
-        }
+        // if (std::abs(time_difference) > 60) {
+        //     return -3.0; // Invalid time
+        // }
     
         // 获取gga_time的UTC时间戳，也就是1970年1月1日0时0分0秒到gga_time的秒数
         return gga_time_local;
@@ -143,7 +144,7 @@ namespace Hessian{
             gnss_pos_msg.status = gnss_pos_status;
             double time_local = GGATime2Local(nmea_split[1]);
             if(time_local < 0) {
-                std::cerr << "NMEA Sentence Time Parse Failed!" << std::endl;
+                std::cerr << "NMEA Sentence Time Parse Failed!,local time="<<time_local << std::endl;
                 return false;
             }
             gnss_pos_msg.header.stamp.fromSec(time_local);

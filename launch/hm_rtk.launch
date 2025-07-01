@@ -1,11 +1,11 @@
 <launch>
-    <arg name="rtk_port" default="/dev/ttyUSB0"/>       <!-- RTK NMEA输入的Port -->
+    <arg name="rtk_port" default="/dev/ttyS0"/>       <!-- RTK NMEA输入的Port -->
     <arg name="rtk_baudrate" default="460800"/>         <!-- RTK NMEA输入的波特率 -->
 
     <arg name="ntrip_ip" default="203.107.45.154"/>     <!-- Ntrip Url -->
     <arg name="ntrip_port" default="8002"/>             <!-- Ntrip port, WGS84 -->
-    <arg name="ntrip_user" default="qxvswp0010094"/>    <!-- Ntrip 用户名、账号 -->
-    <arg name="ntrip_passwd" default="XXXXXX"/>        <!-- Ntrip 密码 -->
+    <arg name="ntrip_user" default="qxshu0032164"/>    <!-- Ntrip 用户名、账号 -->
+    <arg name="ntrip_passwd" default="1679484"/>        <!-- Ntrip 密码 -->
     <arg name="ntrip_mountpoint" default="AUTO"/>       <!-- Ntrip 挂载点 -->
 
     <arg name="pub_rtk_nmea_topic" default="/rtk_nmea"/>           <!-- 解析发布的NMEA的topic -->
@@ -18,17 +18,17 @@
 
 
     <node name="HM_RTK" pkg="hm_rtk" type="rtk_driver_node" output="screen">
-        <param name="ntrip_ip" value="$(arg ntrip_ip)"/>
-        <param name="ntrip_port" value="$(arg ntrip_port)"/>
-        <param name="ntrip_user" value="$(arg ntrip_user)"/>
-        <param name="ntrip_passwd" value="$(arg ntrip_passwd)"/>
+        <param name="ntrip_ip" type="string" value="$(arg ntrip_ip)"/>
+        <param name="ntrip_port" type="string" value="$(arg ntrip_port)"/>
+        <param name="ntrip_user" type="string" value="$(arg ntrip_user)"/>
+        <param name="ntrip_passwd" type="string" value="$(arg ntrip_passwd)"/>
         <param name="ntrip_mountpoint" value="$(arg ntrip_mountpoint)"/>
         <param name="rtk_port" value="$(arg rtk_port)"/>
         <param name="rtk_baudrate" value="$(arg rtk_baudrate)"/>
         <param name="pub_rtk_nmea_topic" value="$(arg pub_rtk_nmea_topic)"/>
         <param name="pub_rtk_ex_pose_topic" value="$(arg pub_rtk_ex_pose_topic)"/>
 
-        <param name="ex_rtk_slam_x" value="$(arg ex_rtk_slam_x)"/>
+        <param name="ex_rtk_slam_x" type="double" value="$(arg ex_rtk_slam_x)"/>
         <param name="ex_rtk_slam_y" value="$(arg ex_rtk_slam_y)"/>
         <param name="ex_rtk_slam_z" value="$(arg ex_rtk_slam_z)"/>
     </node>

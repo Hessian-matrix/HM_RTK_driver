@@ -38,6 +38,7 @@ namespace Hessian{
             _baudrate = baudrate;
             _read_timeout = read_timeout;
             _write_timeout = write_timeout;
+            std::cout<<"write time out"<<_write_timeout<<std::endl;
             _nBits = nBits;
             _nEvent = nEvent;
             _nStop = nStop;
@@ -252,10 +253,12 @@ namespace Hessian{
         return 0;
     }
     int Serial::uart_send(const char *send_buffer,int length){
+        std::unique_lock<std::mutex> lock(fd_mutex);
         length=::write(_fd,send_buffer,length*sizeof(unsigned char));
 	    return length;
     }
     int Serial::uart_recv(char* recv_buffer,int length){
+        std::unique_lock<std::mutex> lock(fd_mutex);
         length=::read(_fd,recv_buffer,length);
         return length;
     }

@@ -128,10 +128,13 @@ int main(int argc, char **argv) {
                 {
                     std::string ret = hm_serial.readline(128);
                     std::string nmea = "$G" + ret;
+                    if(nmea.find("GGA") == std::string::npos && nmea.find("RMC") == std::string::npos)
+                        continue;
                     bool is_nmea = checksum(nmea);//检查校验和
                     if (!is_nmea)
                     {
                         std::cerr<<"NMEA Sentence Check Failed!"<<std::endl;
+                        std::cout<<"\033[31m"<<nmea<<"\033[0m"<<std::endl;
                         continue;
                     }
                     
@@ -147,7 +150,10 @@ int main(int argc, char **argv) {
                         sensor_msgs::NavSatFix gnss_pos_msg;
                         bool ret = parse_pub_nmea(nmea, gnss_pos_msg);
                         if(!ret) { continue; }
-                        
+                        // std::string time_str = "@" + std::to_string(time_now);
+                        // double time_now = ros::Time::now().toNSec() / 1e9;
+                        // nmea.insert(nmea.size() -2,time_str);
+                        // nmea = nmea + "@" + std::to_string(time_now);//测试 打上系统时间
                         std_msgs::String msg;
                         msg.data = nmea;
                         pub_rtk_nmea.publish(msg);	//发布GGA字符串

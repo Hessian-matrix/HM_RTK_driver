@@ -35,7 +35,7 @@ namespace Hessian{
             sum_ ^= nmea[i];
         }
 
-        if(sum!=sum_) printf("%02x %02x %s\n",sum, sum_, nmea_sum);
+        if(sum!=sum_) printf("receive check:%02x cac is:%02x\n",sum, sum_);//收到的校验和 计算校验和 截取字串
 
         return sum == sum_;
     }

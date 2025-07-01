@@ -15,7 +15,7 @@
 #include <exception>
 #include <string>
 #include <sstream>
-
+#include <mutex>
 namespace Hessian {
 
     /// SerialException 用于串口操作中抛出错误信息
@@ -71,6 +71,7 @@ namespace Hessian {
         int _nBits = 8; 
         char _nEvent = 'N'; 
         int _nStop = 1;
+        std::mutex  fd_mutex;
     };
 
 } // namespace Hessian

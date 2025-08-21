@@ -4,3 +4,6 @@
 [submodule "3rdParty/ntrip"]
 	path = 3rdParty/ntrip
 	url = https://github.com/ybzwyrcld/ntrip.git
+[submodule "3rdParty/Sophus"]
+	path = 3rdParty/Sophus
+	url = https://github.com/strasdat/Sophus.git

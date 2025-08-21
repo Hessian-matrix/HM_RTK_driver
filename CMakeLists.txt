@@ -12,6 +12,9 @@ find_package(catkin REQUIRED COMPONENTS
 #ntrip
 add_subdirectory(3rdParty/ntrip)
 
+set(glog_DIR "/home/ll/C/Libs/glog/glog-0.6.0/install/lib/cmake/glog/")
+set(Eigen3_DIR "/home/ll/C/Libs/Eigen/eigen-3.4.0/install/share/eigen3/cmake")
+set(Ceres_DIR "/home/ll/C/Libs/ceres-solver/ceres-solver-2.2.0/install_eigen_340/lib/cmake/Ceres")
 find_package(Eigen3 REQUIRED)
 find_package(Glog REQUIRED)
 find_package(Ceres REQUIRED)
@@ -30,6 +33,7 @@ include_directories(
   ${EIGEN3_INCLUDE_DIRS}
   3rdParty/gnss_comm/include
   3rdParty/gnss_comm/include/gnss_comm
+  3rdParty/Sophus
 )
 add_executable(rtk_driver_node
   src/rtk_driver_node.cpp 

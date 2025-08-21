@@ -1,7 +1,7 @@
 # HM_RTK_Driver
 本仓库是黑森矩阵的RTK驱动仓库，包含两部分：
 - 驱动层，配合viobot2使用。
-- RTK与Viobot2的外参标定工具
+- RTK与Viobot2的外参标定工具（支持3DOF和6DOF RTK两种模式）
 
 使用流程：先基于外参标定工具，进行RTK与viobot2外参标定。然后再使用RTK驱动发布RTK相关话题：
   - `/rtk_extrinsic`  用于发布RTK到viobot2的外参，给viobot2使用。
@@ -25,6 +25,15 @@
       - `/rtk_extrinsic`  用于发布RTK到viobot2的外参，给viobot2使用。
       - `/rtk_nmea`       用于将NMEA的GGA数据字符串发送给viobot2使用。
 
+## 新功能说明
+### 双模式外参标定支持
+- **模式1（传统）**: 3DOF RTK（仅位置信息） + 6DOF SLAM → 2DOF水平外参标定
+- **模式2（升级）**: 6DOF RTK（位置+姿态信息） + 6DOF SLAM → 5DOF外参标定（高程方向仍不可观）
+
+系统会根据接收到的RTK数据类型自动选择模式：
+- 接收 `/baton/rtk` (sensor_msgs::NavSatFix) → 3DOF模式
+- 接收 `/baton/rtk_6DOF` (nav_msgs::Odometry) → 6DOF模式
+
 ## preinstall
 - ros 
 - Eigen3
@@ -34,15 +43,42 @@
 - ceres # 实测 2.1.0
 
 ## 编译
+
+### 完整安装流程
+```bash
+# 1. 创建工作空间
+mkdir -p HM_RTK_Driver_ws/src
+cd HM_RTK_Driver_ws/src
+
+# 2. 克隆仓库
+git clone https://github.com/Hessian-matrix/HM_RTK_driver
+cd HM_RTK_driver
+
+# 3. 初始化并更新所有submodule（包括Sophus库）
+git submodule update --init --recursive
+
+# 4. 编译
+cd ../../
+catkin_make
 ```
-    mkdir -p HM_RTK_Driver_ws/src
-    cd HM_RTK_Driver_ws/src
-    git clone https://github.com/Hessian-matrix/HM_RTK_driver
-    cd HM_RTK_driver
-    git submodule init
-    git submodule update
-    cd ../../
-    catkin_make
+
+### 已有仓库更新submodule
+如果你之前已经clone了仓库，现在需要更新到最新版本（包含Sophus支持）：
+```bash
+cd HM_RTK_driver
+git pull origin master
+git submodule update --init --recursive
+```
+
+### Submodule说明
+- **Sophus**: 用于SE3（6DOF变换）表示，支持6DOF RTK模式
+- **gnss_comm**: GNSS工具库
+- **ntrip**: NTRIP客户端库
+
+如果submodule更新失败，可以尝试：
+```bash
+git submodule foreach --recursive git clean -fd
+git submodule update --init --recursive --force
 ```
 
 ## 硬件时间同步
@@ -54,14 +90,32 @@
 - 定义如下，其中包含了两个串口接口uart3和uart4，以及PPS信号线。需要接PPS的只要把PPS接好并共地即可。
 ![alt text](assets/interface_define.png)
 
-## 外参标定工具（参考）
-我们使用的是单RTK模组进行融合，外参标定只需要标定2个参数：水平平移。
-- 单RTK没有朝向信息， ECEF坐标系朝向固定
-- 对于一般小车场景应用标定来说，采用随机水平移动/绕8移动 标定，高程方向不可观，优化时固定。
-- 对于无人机用户，可以自己设计修改标定程序，满足3DOF外参标定。（同时可欢迎适配好的小伙伴来commit ~ ）
-- 当整个硬件已设计完毕，可从硬件结构图来获取外参结果，无需标定。
+## 外参标定工具
+### 双模式支持
+本工具支持两种RTK模式的外参标定：
+
+#### 模式1：3DOF RTK（传统模式）
+- **RTK数据**: 仅位置信息（sensor_msgs::NavSatFix）
+- **SLAM数据**: 6DOF位姿信息
+- **标定参数**: 2DOF水平外参（x,z方向）+ yaw + anchor点
+- **固定参数**: y方向外参（高程不可观）
+- **话题**: `/baton/rtk`
+
+#### 模式2：6DOF RTK（升级模式）
+- **RTK数据**: 位置+姿态信息（nav_msgs::Odometry）  
+- **SLAM数据**: 6DOF位姿信息
+- **标定参数**: 5DOF外参（x,z,roll,pitch,yaw）+ anchor点
+- **固定参数**: y方向外参（高程仍不可观）
+- **话题**: `/baton/rtk_6DOF`
+
+### 模式自动检测
+系统会根据接收到的数据自动选择模式：
+- 如果收到 `/baton/rtk_6DOF` 数据 → 自动切换到6DOF模式
+- 否则使用传统的3DOF模式
 
 ### 标定原理
+
+#### 3DOF RTK模式（传统）
 采用水平快速随机运动同时采集： viobot2轨迹(左目到世界坐标系的变换) + RTK轨迹（ecef坐标系）， 进行两者轨迹对齐，来进行外参标定。
 
 $$
@@ -69,26 +123,84 @@ $$
     p_{cam} &= R_{yaw}^{-1}R_{ecef}^{enu}(p_{ecef}-ref_{ecef})-R_{cam}^{local}t_{ex}\end{aligned}
 $$
 
-
 可以同时获取 $yaw、t_{ex}、ref_{ecef}$
 
-### 使用
+#### 6DOF RTK模式（升级）
+使用SE3群进行6DOF变换表示，同时标定位置和姿态外参：
+
+$$
+    \begin{aligned} 
+    T_{cam}^{world} &= SE3_{yaw}^{-1} \cdot SE3_{ecef}^{enu} \cdot (SE3_{rtk}^{ecef} \cdot SE3_{ref}^{-1}) \cdot SE3_{ex}^{-1}
+    \end{aligned}
+$$
+
+其中：
+- $SE3_{ex}$: RTK到相机的6DOF外参变换
+- $SE3_{yaw}$: 绕Z轴的对齐变换
+- $SE3_{ecef}^{enu}$: ECEF到ENU的坐标变换
+
+### 使用方法
+
+#### 准备工作
 - viobot2 开机，运行上位机，配置：关闭GNSS, 打开RTK，重启。
 - 开启算法, 用于发布 viobot2轨迹
-- 运行RTK的驱动算法， 用于发布RTK轨迹
-    ` roslaunch hm_rtk HM_RTK.launch `
-    - 保证RTK是固定解：
-      ` rostopic echo /baton/rtk` 的 status = 2
-- 配置初始外参
-  - 配置src/HM_RTK_driver/launch/calib_rtk_slam.launch 文件，设定外参初值。
-  - 坐标系：以左目为原点，XYZ-右下前。即 T_camL<-RTK
-  - 由于高程方向不可观，所以y轴方向必须设定初值（可手动测量），标定过程固定，不参与优化。
-- 在开阔场景，保证RTK是固定解的情况下, 运行标定算法
-  ` roslaunch hm_rtk calib_rtk_slam.launch `
-- **快速**绕8运动（或随机运动），保证在10s时间内包含不同方向的运动。（避免静止或直线运动）
-- 会实时输出标定结果，最后也会输出标定均值，具体结果也导出到了文件(HM_RTK/results/rtk_slam_calib_results.csv)。
-- 也可以将标定结果文件，用Excel查看外参标定。
-![alt text](assets/rtk_ex_excel.png)
+
+#### 3DOF RTK模式使用
+1. **运行RTK驱动**，发布3DOF RTK轨迹：
+   ```bash
+   roslaunch hm_rtk HM_RTK.launch
+   ```
+   - 保证RTK是固定解：`rostopic echo /baton/rtk` 的 status = 2
+
+2. **配置初始外参**：
+   - 编辑 `src/HM_RTK_driver/launch/calib_rtk_slam.launch` 文件
+   - 坐标系：以左目为原点，XYZ-右下前。即 T_camL<-RTK
+   - y轴方向必须设定准确初值（手动测量），标定过程固定
+
+3. **运行标定算法**：
+   ```bash
+   roslaunch hm_rtk calib_rtk_slam.launch
+   ```
+
+#### 6DOF RTK模式使用
+1. **发布6DOF RTK数据**：
+   - 确保有节点发布 `/baton/rtk_6DOF` 话题（nav_msgs::Odometry类型）
+   - 数据应包含完整的位置和姿态信息
+
+2. **配置初始外参**：
+   - 同3DOF模式，编辑launch文件设置初始外参
+   - 6DOF模式会额外标定姿态外参（roll, pitch, yaw）
+
+3. **运行标定算法**：
+   ```bash
+   roslaunch hm_rtk calib_rtk_slam.launch
+   ```
+   - 系统会自动检测到6DOF数据并切换到6DOF模式
+
+#### 标定动作
+- **快速**绕8运动（或随机运动），保证在10s时间内包含不同方向的运动
+- 避免静止或直线运动
+- 保证RTK是固定解状态
+
+#### 结果查看
+- 会实时输出标定结果，区分显示当前使用的模式（3DOF/6DOF）
+- 最后输出标定均值
+- 结果导出到文件：`HM_RTK/results/rtk_slam_calib_results.csv`
+- 可用Excel查看外参标定结果
+
+### 输出格式说明
+CSV文件格式：
+```
+mode,n,converge,yaw,ex_x,ex_y,ex_z,err_ave,err_max,directional_distribution
+3DOF,150,1,0.123,0.03,-0.13,-0.21,0.05,0.12,0.89
+6DOF,200,1,0.134,0.02,-0.13,-0.20,0.03,0.08,SE3
+```
+- `mode`: 标定模式（3DOF/6DOF）
+- `n`: 参与标定的轨迹点数
+- `converge`: 优化是否收敛（1=收敛，0=未收敛）
+- `yaw`: 水平对齐角度（弧度）
+- `ex_x,ex_y,ex_z`: 外参平移（米）
+- `err_ave,err_max`: 平均误差和最大误差（米）
 
 ### 注意事项
 

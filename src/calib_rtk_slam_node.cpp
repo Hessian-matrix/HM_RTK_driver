@@ -8,9 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include <ros/ros.h>
-#include <sensor_msgs/NavSatFix.h>
-#include <nav_msgs/Odometry.h>
+#include "HM_RTK/ros_adapter.hpp"
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <sophus/se3.hpp>
@@ -22,9 +20,10 @@ std::string package_path = "";
 
 class RTKSlamCalibrator {
 public:
-    RTKSlamCalibrator(ros::NodeHandle& nh, const Eigen::Vector3d& init_ex_rtk_slam)
+    RTKSlamCalibrator(ros_adapter::NodeHandle& nh, const Eigen::Vector3d& init_ex_rtk_slam)
         : nh_(nh), init_ex_rtk_slam_(init_ex_rtk_slam) {
         
+#ifdef ROS1_BUILD
         // 订阅传统3DOF RTK
         rtk_sub_ = nh_.subscribe("/baton/rtk", 10, &RTKSlamCalibrator::rtkCallback, this);
         
@@ -33,6 +32,19 @@ public:
         
         // 订阅SLAM
         slam_sub_ = nh_.subscribe("/baton/stereo3/odometry", 10, &RTKSlamCalibrator::slamCallback, this);
+#else
+        // 订阅传统3DOF RTK
+        rtk_sub_ = nh_->create_subscription<NavSatFixMsg>("/baton/rtk", 10, 
+            [this](const NavSatFixMsg::SharedPtr msg) { this->rtkCallback(msg); });
+        
+        // 订阅6DOF RTK (新增)
+        rtk_6dof_sub_ = nh_->create_subscription<OdometryMsg>("/baton/rtk_6DOF", 10,
+            [this](const OdometryMsg::SharedPtr msg) { this->rtk6DOFCallback(msg); });
+        
+        // 订阅SLAM
+        slam_sub_ = nh_->create_subscription<OdometryMsg>("/baton/stereo3/odometry", 10,
+            [this](const OdometryMsg::SharedPtr msg) { this->slamCallback(msg); });
+#endif
         
         optimization_thread_ = std::thread(&RTKSlamCalibrator::optimizationLoop, this);
         
@@ -49,6 +61,7 @@ public:
     }
 
 private:
+#ifdef ROS1_BUILD
     void rtkCallback(const sensor_msgs::NavSatFix::ConstPtr& msg) {
         std::lock_guard<std::mutex> lock(queue_mutex_);
         rtk_queue_.push(*msg);
@@ -64,6 +77,23 @@ private:
         std::lock_guard<std::mutex> lock(queue_mutex_);
         slam_queue_.push(*msg);
     }
+#else
+    void rtkCallback(const NavSatFixMsg::SharedPtr msg) {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        rtk_queue_.push(*msg);
+    }
+
+    void rtk6DOFCallback(const OdometryMsg::SharedPtr msg) {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        rtk_6dof_queue_.push(*msg);
+        has_6dof_rtk_ = true;  // 标记收到6DOF RTK数据
+    }
+
+    void slamCallback(const OdometryMsg::SharedPtr msg) {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        slam_queue_.push(*msg);
+    }
+#endif
 
     void optimizationLoop() {
         // Get the package path and create a directory for results
@@ -86,11 +116,11 @@ private:
         std::vector<Eigen::Vector3d> exs_rtk_slam;
         CalibrationMode current_mode = CalibrationMode::MODE_3DOF_RTK;
         
-        while (ros::ok() && !stop_optimization_) {
+        while (ros_adapter::ok() && !stop_optimization_) {
             // 1. 数据同步：将队列数据转到临时vector中
-            std::vector<sensor_msgs::NavSatFix> rtk_data;
-            std::vector<nav_msgs::Odometry> rtk_6dof_data;
-            std::vector<nav_msgs::Odometry> slam_data;
+            std::vector<NavSatFixMsg> rtk_data;
+            std::vector<OdometryMsg> rtk_6dof_data;
+            std::vector<OdometryMsg> slam_data;
             {
                 std::lock_guard<std::mutex> lock(queue_mutex_);
                 while (!rtk_queue_.empty()) {
@@ -142,8 +172,8 @@ private:
                 std::vector<Eigen::Vector3d> slam_trajectory;
                 std::vector<Eigen::Matrix3d> R_world_cam;
                 
-                auto compare_time = [](const sensor_msgs::NavSatFix& a, const sensor_msgs::NavSatFix& b) {
-                    return a.header.stamp.toSec() < b.header.stamp.toSec();
+                auto compare_time = [](const NavSatFixMsg& a, const NavSatFixMsg& b) {
+                    return GET_STAMP_SEC(a) < GET_STAMP_SEC(b);
                 };
 
                 double velocity_thresh = 0.2;
@@ -156,22 +186,22 @@ private:
                     Eigen::Vector3d slam_pose_prev(slam_all_[i-1].pose.pose.position.x,
                                                    slam_all_[i-1].pose.pose.position.y,
                                                    slam_all_[i-1].pose.pose.position.z);
-                    double dt = slam_all_[i].header.stamp.toSec() - slam_all_[i-1].header.stamp.toSec();
+                    double dt = GET_STAMP_SEC(slam_all_[i]) - GET_STAMP_SEC(slam_all_[i-1]);
                     if(dt < 1e-3) continue;
                     double velocity = (slam_pose - slam_pose_prev).norm() / dt;
                     if (velocity < velocity_thresh) continue;
 
                     // RTK数据插值
-                    double curTime = slam_all_[i].header.stamp.toSec();
-                    sensor_msgs::NavSatFix time_anchor; 
-                    time_anchor.header.stamp.fromSec(curTime);
+                    double curTime = GET_STAMP_SEC(slam_all_[i]);
+                    NavSatFixMsg time_anchor; 
+                    SET_STAMP_SEC(time_anchor, curTime);
                     auto it = std::lower_bound(rtk_all_.begin(), rtk_all_.end(), time_anchor, compare_time);
                     if(it == rtk_all_.begin() || it == rtk_all_.end()) continue;
                     auto it_prev = std::prev(it);
-                    if((it->header.stamp.toSec() - it_prev->header.stamp.toSec()) < 1e-3) continue;
+                    if((GET_STAMP_SEC(*it) - GET_STAMP_SEC(*it_prev)) < 1e-3) continue;
                     if(it->status.status < 2 || it_prev->status.status < 2) continue;
-                    double weight = (curTime - it_prev->header.stamp.toSec()) /
-                                    (it->header.stamp.toSec() - it_prev->header.stamp.toSec());
+                    double weight = (curTime - GET_STAMP_SEC(*it_prev)) /
+                                    (GET_STAMP_SEC(*it) - GET_STAMP_SEC(*it_prev));
                     if(weight < 0.0 || weight > 1.0) continue;
                     
                     Eigen::Vector3d ecef_before = gnss_comm::geo2ecef(
@@ -234,8 +264,8 @@ private:
                 std::vector<Sophus::SE3d> rtk_poses;
                 std::vector<Sophus::SE3d> slam_poses;
                 
-                auto compare_time_6dof = [](const nav_msgs::Odometry& a, const nav_msgs::Odometry& b) {
-                    return a.header.stamp.toSec() < b.header.stamp.toSec();
+                auto compare_time_6dof = [](const OdometryMsg& a, const OdometryMsg& b) {
+                    return GET_STAMP_SEC(a) < GET_STAMP_SEC(b);
                 };
 
                 double velocity_thresh = 0.2;
@@ -248,22 +278,22 @@ private:
                     Eigen::Vector3d slam_pose_prev(slam_all_[i-1].pose.pose.position.x,
                                                    slam_all_[i-1].pose.pose.position.y,
                                                    slam_all_[i-1].pose.pose.position.z);
-                    double dt = slam_all_[i].header.stamp.toSec() - slam_all_[i-1].header.stamp.toSec();
+                    double dt = GET_STAMP_SEC(slam_all_[i]) - GET_STAMP_SEC(slam_all_[i-1]);
                     if(dt < 1e-3) continue;
                     double velocity = (slam_pose - slam_pose_prev).norm() / dt;
                     if (velocity < velocity_thresh) continue;
 
                     // 6DOF RTK数据插值
-                    double curTime = slam_all_[i].header.stamp.toSec();
-                    nav_msgs::Odometry time_anchor; 
-                    time_anchor.header.stamp.fromSec(curTime);
+                    double curTime = GET_STAMP_SEC(slam_all_[i]);
+                    OdometryMsg time_anchor; 
+                    SET_STAMP_SEC(time_anchor, curTime);
                     auto it = std::lower_bound(rtk_6dof_all_.begin(), rtk_6dof_all_.end(), time_anchor, compare_time_6dof);
                     if(it == rtk_6dof_all_.begin() || it == rtk_6dof_all_.end()) continue;
                     auto it_prev = std::prev(it);
-                    if((it->header.stamp.toSec() - it_prev->header.stamp.toSec()) < 1e-3) continue;
+                    if((GET_STAMP_SEC(*it) - GET_STAMP_SEC(*it_prev)) < 1e-3) continue;
                     
-                    double weight = (curTime - it_prev->header.stamp.toSec()) /
-                                    (it->header.stamp.toSec() - it_prev->header.stamp.toSec());
+                    double weight = (curTime - GET_STAMP_SEC(*it_prev)) /
+                                    (GET_STAMP_SEC(*it) - GET_STAMP_SEC(*it_prev));
                     if(weight < 0.0 || weight > 1.0) continue;
                     
                     // 位置插值
@@ -295,7 +325,7 @@ private:
                 // SE3轨迹对齐优化
                 if (rtk_poses.size() > 100) {
                     ROS_INFO("Running 6DOF RTK SE3 trajectory alignment, size=%d", static_cast<int>(rtk_poses.size()));
-                    TrajectoryAligner aligner(rtk_positions, rtk_poses, slam_poses);
+                    TrajectoryAligner aligner(rtk_poses, slam_poses);
                     
                     // 初始化SE3外参
                     Eigen::Quaterniond init_q = Eigen::Quaterniond::Identity();
@@ -339,16 +369,22 @@ private:
     }
 
 private:
-    ros::NodeHandle& nh_;
+    ros_adapter::NodeHandle& nh_;
+#ifdef ROS1_BUILD
     ros::Subscriber rtk_sub_;
     ros::Subscriber rtk_6dof_sub_;  // 新增：6DOF RTK订阅器
     ros::Subscriber slam_sub_;
-    std::queue<sensor_msgs::NavSatFix> rtk_queue_;
-    std::queue<nav_msgs::Odometry> rtk_6dof_queue_;  // 新增：6DOF RTK队列
-    std::queue<nav_msgs::Odometry> slam_queue_;
-    std::vector<sensor_msgs::NavSatFix> rtk_all_;
-    std::vector<nav_msgs::Odometry> rtk_6dof_all_;  // 新增：6DOF RTK历史数据
-    std::vector<nav_msgs::Odometry> slam_all_;
+#else
+    ros_adapter::Subscriber_t<NavSatFixMsg> rtk_sub_;
+    ros_adapter::Subscriber_t<OdometryMsg> rtk_6dof_sub_;  // 新增：6DOF RTK订阅器
+    ros_adapter::Subscriber_t<OdometryMsg> slam_sub_;
+#endif
+    std::queue<NavSatFixMsg> rtk_queue_;
+    std::queue<OdometryMsg> rtk_6dof_queue_;  // 新增：6DOF RTK队列
+    std::queue<OdometryMsg> slam_queue_;
+    std::vector<NavSatFixMsg> rtk_all_;
+    std::vector<OdometryMsg> rtk_6dof_all_;  // 新增：6DOF RTK历史数据
+    std::vector<OdometryMsg> slam_all_;
     std::mutex queue_mutex_;
 
     Eigen::Vector3d static_ref_ecef_ = Eigen::Vector3d::Zero();
@@ -359,19 +395,28 @@ private:
 };
 
 int main(int argc, char** argv) {
-    ros::init(argc, argv, "rtk_slam_calibrator");
-    ros::NodeHandle nh("~");
+    ros_adapter::init(argc, argv, "rtk_slam_calibrator");
+    
+#ifdef ROS1_BUILD
+    ros_adapter::NodeHandle nh = ros_adapter::createNodeHandle("~");
+#else
+    auto nh = ros_adapter::createNodeHandle("rtk_slam_calibrator");
+#endif
 
     // 在左目坐标系下， XYZ-右下前. y必须手量，因为在校正过程中高度差方向不客观，优化时固定。提供的初值即最终值。
     double x,y,z;
-    nh.param<double>("ex_rtk_slam_x", x, 0.03);
-    nh.param<double>("ex_rtk_slam_y", y, -0.13);
-    nh.param<double>("ex_rtk_slam_z", z, -0.21);
-    nh.param<std::string>("package_path", package_path, "");
+    ros_adapter::getParam(nh, "ex_rtk_slam_x", x, 0.03);
+    ros_adapter::getParam(nh, "ex_rtk_slam_y", y, -0.13);
+    ros_adapter::getParam(nh, "ex_rtk_slam_z", z, -0.21);
+    ros_adapter::getParam(nh, "package_path", package_path, std::string(""));
     Eigen::Vector3d init_ex_rtk_slam(x,y,z);
     std::cout << "init_ex_rtk_slam: " << init_ex_rtk_slam.transpose() << std::endl;
     RTKSlamCalibrator calibrator(nh, init_ex_rtk_slam);
 
+#ifdef ROS1_BUILD
     ros::spin();
+#else
+    rclcpp::spin(nh);
+#endif
     return 0;
 }

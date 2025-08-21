@@ -5,7 +5,13 @@
 #include <boost/assign/list_of.hpp>
 #include <boost/asio.hpp>
 #include <boost/regex.hpp>
-#include <std_msgs/Header.h>
+#include <iomanip>
+
+#ifdef ROS1_BUILD
+    #include <std_msgs/Header.h>
+#else
+    #include <std_msgs/msg/header.hpp>
+#endif
 
 
 namespace Hessian{
@@ -86,7 +92,7 @@ namespace Hessian{
     /// @param lon_nmea 
     /// @param lat_nmea 
     /// @return 
-    bool parse_pub_nmea(const std::string& nmea, sensor_msgs::NavSatFix& gnss_pos_msg)
+    bool parse_pub_nmea(const std::string& nmea, NavSatFixMsg& gnss_pos_msg)
     {
         std::vector<std::string> nmea_split;
         boost::split(nmea_split, nmea, boost::is_any_of(","));
@@ -130,7 +136,11 @@ namespace Hessian{
                 0.0, 0.0, pos_cov 
             };
 
+#ifdef ROS1_BUILD
             sensor_msgs::NavSatStatus gnss_pos_status;
+#else
+            sensor_msgs::msg::NavSatStatus gnss_pos_status;
+#endif
             int pos_status = strtol(nmea_split[6].c_str(), nullptr, 10);
             if (pos_status == 0)
                 gnss_pos_status.status = -1;
@@ -147,7 +157,14 @@ namespace Hessian{
                 std::cerr << "NMEA Sentence Time Parse Failed!,local time="<<time_local << std::endl;
                 return false;
             }
+#ifdef ROS1_BUILD
             gnss_pos_msg.header.stamp.fromSec(time_local);
+#else
+            auto sec = static_cast<int32_t>(time_local);
+            auto nanosec = static_cast<uint32_t>((time_local - sec) * 1e9);
+            gnss_pos_msg.header.stamp.sec = sec;
+            gnss_pos_msg.header.stamp.nanosec = nanosec;
+#endif
             gnss_pos_msg.header.frame_id = "rtk_link";
             // std::cout << "rtk time=" << gnss_pos_msg.header.timestamp << " cur time=" << rosTime
 		    // 	<< " diff=" << rosTime - gnss_pos_msg.header.timestamp << std::endl;

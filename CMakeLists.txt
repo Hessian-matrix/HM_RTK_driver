@@ -1,63 +1,46 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.0.2)
 project(hm_rtk)
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
-add_definitions(-DROS2)
-# find dependencies
-find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(nav_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
+set(CMAKE_BUILD_TYPE "Release") # Release, Debug or RelWithDebInfo
+
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  std_msgs
+  sensor_msgs
+)
+
+#ntrip
 add_subdirectory(3rdParty/ntrip)
 
 find_package(Eigen3 REQUIRED)
 find_package(Glog REQUIRED)
-# find_package(Ceres REQUIRED)
-find_package(Boost REQUIRED COMPONENTS regex)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
+find_package(Ceres REQUIRED)
+
+catkin_package(
+#  INCLUDE_DIRS include
+#  LIBRARIES HM_RTK
+#  CATKIN_DEPENDS roscpp std_msgs
+#  DEPENDS system_lib
+)
+
 
 include_directories(
   include
-  ${Boost_INCLUDE_DIRS}
+  ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
   3rdParty/gnss_comm/include
   3rdParty/gnss_comm/include/gnss_comm
 )
 add_executable(rtk_driver_node
-  src/rtk_driver_node_ros2.cpp 
+  src/rtk_driver_node.cpp 
   src/serial_hm.cpp
   src/utils.cpp
 )
-ament_target_dependencies(rtk_driver_node
-  rclcpp
-  std_msgs
-  geometry_msgs
-  sensor_msgs
-  nav_msgs
-)
-target_link_libraries(rtk_driver_node
- ntrip
- ${Boost_LIBRARIES}
-)
+target_link_libraries(rtk_driver_node ${catkin_LIBRARIES} ntrip)
 
-# add_executable(calib_rtk_slam_node 
-#   src/calib_rtk_slam_node.cpp 
-#   src/trajectory_aligner.cpp
-#   3rdParty/gnss_comm/src/gnss_utility.cpp
-# )
-# target_link_libraries(calib_rtk_slam_node ${catkin_LIBRARIES} ${CERES_LIBRARIES} glog::glog)
-
-install(TARGETS rtk_driver_node
-  DESTINATION lib/${PROJECT_NAME}
+add_executable(calib_rtk_slam_node 
+  src/calib_rtk_slam_node.cpp 
+  src/trajectory_aligner.cpp
+  3rdParty/gnss_comm/src/gnss_utility.cpp
 )
-
-install(FILES launch/hm_rtk.launch.py
-  DESTINATION share/${PROJECT_NAME}/launch
-)
-
-ament_package()
+target_link_libraries(calib_rtk_slam_node ${catkin_LIBRARIES} ${CERES_LIBRARIES} glog::glog)

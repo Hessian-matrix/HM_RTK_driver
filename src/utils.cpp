@@ -1,11 +1,8 @@
 #include "HM_RTK/utils.hpp"
 #include <vector>
 #include <chrono>
-#include <boost/algorithm/string.hpp>
-#include <boost/assign/list_of.hpp>
-#include <boost/asio.hpp>
-#include <boost/regex.hpp>
-#include <std_msgs/Header.h>
+
+
 
 
 namespace Hessian{
@@ -86,7 +83,7 @@ namespace Hessian{
     /// @param lon_nmea 
     /// @param lat_nmea 
     /// @return 
-    bool parse_pub_nmea(const std::string& nmea, sensor_msgs::NavSatFix& gnss_pos_msg)
+    bool parse_pub_nmea(const std::string& nmea, NavSatFix_msg& gnss_pos_msg)
     {
         std::vector<std::string> nmea_split;
         boost::split(nmea_split, nmea, boost::is_any_of(","));
@@ -129,8 +126,18 @@ namespace Hessian{
                 0.0, pos_cov, 0.0,
                 0.0, 0.0, pos_cov 
             };
-
+            double time_local = GGATime2Local(nmea_split[1]);
+            if(time_local < 0) {
+                std::cerr << "NMEA Sentence Time Parse Failed!,local time="<<time_local << std::endl;
+                return false;
+            }
+            #ifdef ROS1
             sensor_msgs::NavSatStatus gnss_pos_status;
+            gnss_pos_msg.header.stamp.fromSec(time_local);
+            #else
+            sensor_msgs::msg::NavSatStatus gnss_pos_status;
+            gnss_pos_msg.header.stamp = rclcpp::Time(static_cast<int64_t>(time_local * 1e9));
+            #endif
             int pos_status = strtol(nmea_split[6].c_str(), nullptr, 10);
             if (pos_status == 0)
                 gnss_pos_status.status = -1;
@@ -142,12 +149,8 @@ namespace Hessian{
                 gnss_pos_status.status = 2;
 
             gnss_pos_msg.status = gnss_pos_status;
-            double time_local = GGATime2Local(nmea_split[1]);
-            if(time_local < 0) {
-                std::cerr << "NMEA Sentence Time Parse Failed!,local time="<<time_local << std::endl;
-                return false;
-            }
-            gnss_pos_msg.header.stamp.fromSec(time_local);
+            
+            
             gnss_pos_msg.header.frame_id = "rtk_link";
             // std::cout << "rtk time=" << gnss_pos_msg.header.timestamp << " cur time=" << rosTime
 		    // 	<< " diff=" << rosTime - gnss_pos_msg.header.timestamp << std::endl;
@@ -158,4 +161,115 @@ namespace Hessian{
 
         return true;
     }
+
+bool parse_pub_sixdof_pos(const std::string& unicore,sixdof_pose_with_cov& sixdof_pos_t)
+    {
+        odometry_msg::SharedPtr odom_msg = std::make_shared<odometry_msg>();
+        /*
+        #AGRICA,71,GPS,FINE,2380,107715000,0,0,18,29;GNSS,232,25,8,18,5,54,57,1,4,6,10,4,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,52.2532,-26.0627,0.0000,0.005,-0.002,0.001,0.004,0.013,0.024,0.017,22.81650931651,113.49591238102,113.4588,-2345104.1224,5394422.6407,2458043.5383,3.0713,1.9782,2.9371,1.9739,3.8975,1.6988,0.00000000000,0.00000000000,0.0000,22.81635326274,113.49626863709,59.2863,107715000,0.000,147.474991,-5.699764,0.000000,0.000000,4,0,0,0*a46bc9b9
+        */
+    //    std::cout<<"odom addr:"<<(int)odom_msg<<std::endl;
+        const auto it = unicore.find(";GNSS");
+        if (it == std::string::npos){
+            std::cout<<"not find\n";
+            return false;
+        }
+        std::string core_str(unicore.begin() + it,unicore.end());
+        // std::cout<<"core_str "<<core_str<<std::endl;
+        std::vector<std::string> unicore_split;
+        boost::split(unicore_split, core_str, boost::is_any_of(","));
+        if (unicore_split.size() < 57){
+            std::cerr << "Unicore Sentence Split Failed! split is "<< unicore_split.size() << std::endl;
+            return false;
+        }
+
+        int year = std::strtod(unicore_split[2].c_str(),nullptr);
+        int minute = std::strtod(unicore_split[6].c_str(),nullptr);
+        int state = std::strtod(unicore_split[9].c_str(),nullptr);
+        double yaw = std::strtod(unicore_split[19].c_str(),nullptr);
+        double pitch = std::strtod(unicore_split[20].c_str(),nullptr);
+        double roll = std::strtod(unicore_split[21].c_str(),nullptr);
+        double ecrf_x = std::strtod(unicore_split[32].c_str(),nullptr);
+        double ecrf_y = std::strtod(unicore_split[33].c_str(),nullptr);
+        double ecrf_z = std::strtod(unicore_split[34].c_str(),nullptr);
+        int sat = 
+        
+        sixdof_pos_t.year = year;
+        sixdof_pos_t.mounth = std::strtod(unicore_split[3].c_str(),nullptr);
+        sixdof_pos_t.day = std::strtod(unicore_split[4].c_str(),nullptr);
+        sixdof_pos_t.hour = std::strtod(unicore_split[5].c_str(),nullptr);
+        sixdof_pos_t.minute = minute;//分
+        sixdof_pos_t.second = std::strtod(unicore_split[7].c_str(),nullptr);//秒
+        sixdof_pos_t.second_gps = std::strtod(unicore_split[47].c_str(),nullptr);/*GPS 周内毫秒*/
+
+        sixdof_pos_t.state = (int)std::strtod(unicore_split[9].c_str(),nullptr);
+        sixdof_pos_t.sat = (int)std::strtod(unicore_split[10].c_str(),nullptr);  /*参与解算 GPS 卫星数*/
+        sixdof_pos_t.sat += (int)std::strtod(unicore_split[11].c_str(),nullptr); /*参与解算北斗卫星数 */
+        sixdof_pos_t.sat += (int)std::strtod(unicore_split[12].c_str(),nullptr); /*参与解算 GLONASS 卫星数 */
+
+        printf("y %d s %d sat:%d state:%d [%f %f %f],[%f %f %f]\n",year,minute,sixdof_pos_t.sat, state,yaw,pitch,roll,ecrf_x,ecrf_y,ecrf_z);
+
+        sixdof_pos_t.ecef_x = std::strtod(unicore_split[32].c_str(),nullptr);
+        sixdof_pos_t.ecef_y = std::strtod(unicore_split[33].c_str(),nullptr);
+        sixdof_pos_t.ecef_z = std::strtod(unicore_split[34].c_str(),nullptr);
+
+        //zyx顺序
+        Eigen::Quaterniond q = Eigen::AngleAxisd(std::strtod(unicore_split[19].c_str(),nullptr)* M_PI /180, Eigen::Vector3d::UnitZ()) *
+        Eigen::AngleAxisd(std::strtod(unicore_split[20].c_str(),nullptr)* M_PI /180, Eigen::Vector3d::UnitY()) *
+        Eigen::AngleAxisd(0.0, Eigen::Vector3d::UnitX());
+
+        sixdof_pos_t.q = q;
+        sixdof_pos_t.xigema_ecef_x = std::strtod(unicore_split[38].c_str(),nullptr);
+        sixdof_pos_t.xigema_ecef_y = std::strtod(unicore_split[39].c_str(),nullptr);
+        sixdof_pos_t.xigema_ecef_z = std::strtod(unicore_split[40].c_str(),nullptr);
+        sixdof_pos_t.xigema_lat = std::strtod(unicore_split[35].c_str(),nullptr);
+        sixdof_pos_t.xigema_lon = std::strtod(unicore_split[36].c_str(),nullptr),/*经度标准差 */
+        sixdof_pos_t.xigema_alt = std::strtod(unicore_split[37].c_str(),nullptr),/*高程标准差*/
+
+        sixdof_pos_t.lat = std::strtod(unicore_split[29].c_str(),nullptr);
+        sixdof_pos_t.lon = std::strtod(unicore_split[30].c_str(),nullptr);/*经纬高 lon*/
+        sixdof_pos_t.alt = std::strtod(unicore_split[31].c_str(),nullptr);/*经纬高 alt*/
+
+        //东北天速度
+        sixdof_pos_t.v_north = std::strtod(unicore_split[23].c_str(),nullptr);/*北方向速度*/
+        sixdof_pos_t.v_east = std::strtod(unicore_split[24].c_str(),nullptr);/*东方向速度 */
+        sixdof_pos_t.v_up = std::strtod(unicore_split[25].c_str(),nullptr);/*天顶方向速度 */
+        
+
+
+        sixdof_pos_t.xigema_vx = std::strtod(unicore_split[26].c_str(),nullptr);/*北方向速度标准差*/
+        sixdof_pos_t.xigema_vx = std::strtod(unicore_split[27].c_str(),nullptr);/*东方向速度标准差*/
+        sixdof_pos_t.xigema_vz = std::strtod(unicore_split[28].c_str(),nullptr);/*天顶方向速度标准差*/
+
+        sixdof_pos_t.pose_type = std::strtod(unicore_split[10].c_str(),nullptr);/*流动站定位状态：*/
+        sixdof_pos_t.speed_type = std::strtod(unicore_split[54].c_str(),nullptr);/*速度解状态有效*/
+
+        return true;
+    }
+
+// bool return_stence(std::string& buffer,std::string& stence){
+//         auto count_char = [](const std::string& str, char target){
+//             return std::count(str.begin(), str.end(), target);
+//         };
+//         if(count_char(buffer,'$') == 0 || count_char(buffer,'#') == 0 || count_char(buffer,'\r\n') > 0)
+//         {
+//             std::cout<<"buffer empty wait.\n";
+//             return false;
+//         }
+//         auto head_start_it = [&](){
+//             for(auto it = buffer.begin();it != buffer.end();it ++)
+//             {  
+//                 if(*it == '$' || *it == '#'  )
+//                     return it;
+//             }
+//         };
+        
+//         std::cout<<"buff:\n";
+//         std::for_each(buffer.begin(),buffer.end(),[](auto val){std::cout<<val<<" ";});
+//         std::cout<<"\n";
+
+
+
+// }
+
 }

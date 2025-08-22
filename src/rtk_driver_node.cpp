@@ -162,6 +162,18 @@ int main(int argc, char **argv) {
                     }
                 }
             }
+            if(c == "#")
+            {
+                std::string ret = hm_serial.readline(500);
+                std::string unicore = "#" + ret;
+                if(unicore.find("AGRICA") != std::string::npos)
+                {
+                    string_msg msg;
+                    msg.data = unicore;
+                    pub_rtk_nmea.publish(msg);
+                    // std::cout<<unicore;
+                }
+            }
         } catch (const std::exception& e) {
             ROS_ERROR_STREAM("Serial read error: " << e.what());
             ros::Duration(1.0).sleep();  // 错误恢复等待

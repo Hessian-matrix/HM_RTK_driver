@@ -56,8 +56,9 @@ install(TARGETS rtk_driver_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(FILES launch/hm_rtk.launch.py
+install(DIRECTORY launch2
   DESTINATION share/${PROJECT_NAME}/launch
 )
+
 
 ament_package()

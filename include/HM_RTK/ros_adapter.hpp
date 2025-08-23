@@ -51,14 +51,6 @@
         inline Time now() { return ros::Time::now(); }
         inline Duration sleep_duration(double seconds) { return ros::Duration(seconds); }
         
-        #define ROS_INFO_STREAM(x) ROS_INFO_STREAM(x)
-        #define ROS_ERROR_STREAM(x) ROS_ERROR_STREAM(x)
-        #define ROS_FATAL_STREAM(x) ROS_FATAL_STREAM(x)
-        #define ROS_WARN_STREAM(x) ROS_WARN_STREAM(x)
-        #define ROS_INFO(x) ROS_INFO(x)
-        #define ROS_ERROR(x) ROS_ERROR(x)
-        #define ROS_FATAL(x) ROS_FATAL(x)
-        #define ROS_WARN(x) ROS_WARN(x)
     }
 
 #elif defined(ROS2_BUILD)

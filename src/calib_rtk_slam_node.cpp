@@ -20,7 +20,7 @@ std::string package_path = "";
 
 class RTKSlamCalibrator {
 public:
-    RTKSlamCalibrator(ros_adapter::NodeHandle& nh, const Eigen::Vector3d& init_ex_rtk_slam)
+    RTKSlamCalibrator(ros_adapter::NodeHandle& nh, const Sophus::SE3d& init_ex_rtk_slam)
         : nh_(nh), init_ex_rtk_slam_(init_ex_rtk_slam) {
         
 #ifdef ROS1_BUILD
@@ -28,7 +28,7 @@ public:
         rtk_sub_ = nh_.subscribe("/baton/rtk", 10, &RTKSlamCalibrator::rtkCallback, this);
         
         // 订阅6DOF RTK (新增)
-        rtk_6dof_sub_ = nh_.subscribe("/baton/rtk_6DOF", 10, &RTKSlamCalibrator::rtk6DOFCallback, this);
+        rtk_6dof_sub_ = nh_.subscribe("/baton/rtk_sixdof", 10, &RTKSlamCalibrator::rtk6DOFCallback, this);
         
         // 订阅SLAM
         slam_sub_ = nh_.subscribe("/baton/stereo3/odometry", 10, &RTKSlamCalibrator::slamCallback, this);
@@ -38,17 +38,17 @@ public:
             [this](const NavSatFixMsg::SharedPtr msg) { this->rtkCallback(msg); });
         
         // 订阅6DOF RTK (新增)
-        rtk_6dof_sub_ = nh_->create_subscription<OdometryMsg>("/baton/rtk_6DOF", 10,
+        rtk_6dof_sub_ = nh_->create_subscription<OdometryMsg>("/baton/rtk_sixdof", 10,
             [this](const OdometryMsg::SharedPtr msg) { this->rtk6DOFCallback(msg); });
         
         // 订阅SLAM
-        slam_sub_ = nh_->create_subscription<OdometryMsg>("/baton/stereo3/odometry", 10,
+        slam_sub_ = nh_->create_subscription<OdometryMsg>("/baton/stereo3/imu_odom", 10,
             [this](const OdometryMsg::SharedPtr msg) { this->slamCallback(msg); });
 #endif
         
         optimization_thread_ = std::thread(&RTKSlamCalibrator::optimizationLoop, this);
         
-        ROS_INFO("RTK SLAM Calibrator started. Listening for both 3DOF RTK (/baton/rtk) and 6DOF RTK (/baton/rtk_6DOF)");
+        ROS_INFO("RTK SLAM Calibrator started. Listening for both 3DOF RTK (/baton/rtk) and 6DOF RTK (/baton/rtk_sixdof)");
     }
 
     ~RTKSlamCalibrator() {
@@ -156,10 +156,6 @@ private:
 
             if (current_mode == CalibrationMode::MODE_3DOF_RTK) {
                 // Mode 1: 3DOF RTK处理逻辑（保持原有逻辑）
-                if (rtk_data.empty()) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    continue;
-                }
                 
                 // 如未设置静态参考点，则取首条固定数据的ECEF作为初始参考
                 if(static_ref_ecef_.isZero() && !rtk_all_.empty()){
@@ -224,7 +220,7 @@ private:
                     ROS_INFO("Running 3DOF RTK trajectory alignment, size=%d", static_cast<int>(rtk_trajectory.size()));
                     TrajectoryAligner aligner(rtk_trajectory, slam_trajectory, R_world_cam);
                     aligner.SetInitialRef(static_ref_ecef_);
-                    aligner.SetInitialEx(init_ex_rtk_slam_);
+                    aligner.SetInitialEx(init_ex_rtk_slam_.translation());
 
                     bool isConverged = aligner.Solve();
                     auto error = aligner.getError();
@@ -254,10 +250,6 @@ private:
                 
             } else {
                 // Mode 2: 6DOF RTK处理逻辑
-                if (rtk_6dof_data.empty()) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    continue;
-                }
                 
                 // 构造SE3轨迹数据
                 std::vector<Eigen::Vector3d> rtk_positions;
@@ -268,6 +260,7 @@ private:
                     return GET_STAMP_SEC(a) < GET_STAMP_SEC(b);
                 };
 
+                int n1=0, n2=0, n3=0, n4=0, n5=0, n6=0, n7=0;
                 double velocity_thresh = 0.2;
                 int n_start = std::max(1, static_cast<int>(slam_all_.size()) - 25*10);
                 for (size_t i = n_start; i < slam_all_.size(); ++i) {
@@ -279,23 +272,23 @@ private:
                                                    slam_all_[i-1].pose.pose.position.y,
                                                    slam_all_[i-1].pose.pose.position.z);
                     double dt = GET_STAMP_SEC(slam_all_[i]) - GET_STAMP_SEC(slam_all_[i-1]);
-                    if(dt < 1e-3) continue;
+                    if(dt < 1e-3) { n1++; continue; }
                     double velocity = (slam_pose - slam_pose_prev).norm() / dt;
-                    if (velocity < velocity_thresh) continue;
+                    if (velocity < velocity_thresh) { n2++; continue; }
 
                     // 6DOF RTK数据插值
                     double curTime = GET_STAMP_SEC(slam_all_[i]);
                     OdometryMsg time_anchor; 
                     SET_STAMP_SEC(time_anchor, curTime);
                     auto it = std::lower_bound(rtk_6dof_all_.begin(), rtk_6dof_all_.end(), time_anchor, compare_time_6dof);
-                    if(it == rtk_6dof_all_.begin() || it == rtk_6dof_all_.end()) continue;
+                    if(it == rtk_6dof_all_.begin() || it == rtk_6dof_all_.end()) { n3++; continue; }
                     auto it_prev = std::prev(it);
-                    if((GET_STAMP_SEC(*it) - GET_STAMP_SEC(*it_prev)) < 1e-3) continue;
-                    
+                    if((GET_STAMP_SEC(*it) - GET_STAMP_SEC(*it_prev)) < 1e-3) { n4++; continue; }
+
                     double weight = (curTime - GET_STAMP_SEC(*it_prev)) /
                                     (GET_STAMP_SEC(*it) - GET_STAMP_SEC(*it_prev));
-                    if(weight < 0.0 || weight > 1.0) continue;
-                    
+                    if(weight < 0.0 || weight > 1.0) { n5++; continue; }
+
                     // 位置插值
                     Eigen::Vector3d pos_before(it_prev->pose.pose.position.x, it_prev->pose.pose.position.y, it_prev->pose.pose.position.z);
                     Eigen::Vector3d pos_after(it->pose.pose.position.x, it->pose.pose.position.y, it->pose.pose.position.z);
@@ -321,6 +314,8 @@ private:
                     rtk_poses.push_back(rtk_se3);
                     slam_poses.push_back(slam_se3);
                 }
+                // std::cout << " >>>> all=" << slam_all_.size() << ", final=" << rtk_poses.size() << ", n1=" << n1 << ", n2=" << n2 
+                //           << ", n3=" << n3 << ", n4=" << n4 << ", n5=" << n5 << std::endl;
 
                 // SE3轨迹对齐优化
                 if (rtk_poses.size() > 100) {
@@ -328,30 +323,35 @@ private:
                     TrajectoryAligner aligner(rtk_poses, slam_poses);
                     
                     // 初始化SE3外参
-                    Eigen::Quaterniond init_q = Eigen::Quaterniond::Identity();
-                    Sophus::SE3d init_se3_ex(init_q, init_ex_rtk_slam_);
-                    aligner.SetInitialSE3Ex(init_se3_ex);
+                    aligner.SetInitialSE3Ex(init_ex_rtk_slam_);
+                    aligner.SetInitialRef(rtk_poses.front().translation());
+                    // aligner.SetYawFixed(true);
+                    // aligner.SetRefFixed(true);
+                    // aligner.SetSE3ExFixed(true);
 
                     bool isConverged = aligner.Solve();
                     auto error = aligner.getError();
                     double yaw = aligner.GetYaw();
+                    Eigen::Vector3d ancher_ecef = aligner.GetRef();
                     Sophus::SE3d se3_ex = aligner.GetSE3Ex();
                     Eigen::Vector3d ex = se3_ex.translation();
-                    Eigen::Vector3d euler = se3_ex.so3().log();  // 简化的姿态表示
-                    
+                    Eigen::Vector3d ypr = se3_ex.so3().matrix().eulerAngles(2, 1, 0);
+
                     exs_rtk_slam.emplace_back(ex);
 
-                    printf("Mode: 6DOF, n,%d,converge,%d,yaw,%f,ex,%f,%f,%f,euler,%f,%f,%f,error,%f,%f\n",
-                        static_cast<int>(rtk_poses.size()),
-                        isConverged, yaw, ex.x(), ex.y(), ex.z(),
-                        euler.x(), euler.y(), euler.z(),
+                    printf("Mode: 6DOF, n,%d,converge,%d,yaw,%f,ancher,%f,%f,%f,ex,%f,%f,%f,euler,%f,%f,%f,error,%f,%f\n",
+                        static_cast<int>(rtk_poses.size()), isConverged, yaw, 
+                        ancher_ecef.x(), ancher_ecef.y(), ancher_ecef.z(),
+                        ex.x(), ex.y(), ex.z(),
+                        ypr.x(), ypr.y(), ypr.z(),
                         error.first, error.second);
                     outResults << "6DOF," << rtk_poses.size() << "," << isConverged << "," << yaw << ","
                                << ex.x() << "," << ex.y() << "," << ex.z() << ","
-                               << error.first << "," << error.second << ",SE3" << "\n" << std::flush;
+                               << ypr.x() << "," << ypr.y() << "," << ypr.z() << ","
+                               << error.first << "," << error.second << ",SE3" << "\n" << std::flush << std::endl;
                 } else {
                     std::cout << "\r[6DOF Mode] Collecting more moving data... Current trajectory size: " 
-                              << rtk_poses.size() << std::flush;
+                              << rtk_poses.size() << std::flush << std::endl;
                 }
             }
 
@@ -388,7 +388,7 @@ private:
     std::mutex queue_mutex_;
 
     Eigen::Vector3d static_ref_ecef_ = Eigen::Vector3d::Zero();
-    Eigen::Vector3d init_ex_rtk_slam_ = Eigen::Vector3d::Zero();
+    Sophus::SE3d init_ex_rtk_slam_;
     std::thread optimization_thread_;
     bool stop_optimization_ = false;
     bool has_6dof_rtk_ = false;  // 新增：标记是否收到6DOF RTK数据
@@ -404,14 +404,20 @@ int main(int argc, char** argv) {
 #endif
 
     // 在左目坐标系下， XYZ-右下前. y必须手量，因为在校正过程中高度差方向不客观，优化时固定。提供的初值即最终值。
-    double x,y,z;
+    double x,y,z, yaw;
     ros_adapter::getParam(nh, "ex_rtk_slam_x", x, 0.03);
     ros_adapter::getParam(nh, "ex_rtk_slam_y", y, -0.13);
     ros_adapter::getParam(nh, "ex_rtk_slam_z", z, -0.21);
-    ros_adapter::getParam(nh, "package_path", package_path, std::string(""));
+    ros_adapter::getParam(nh, "ex_rtk_slam_yaw", yaw, 30.0);
+    ros_adapter::getParam(nh, "package_path", package_path, std::string("/home/ll/C/ws/zcf_GNSS_Driver_ws/outputs/"));
+
     Eigen::Vector3d init_ex_rtk_slam(x,y,z);
+    Eigen::Matrix3d R_init; R_init << 0,-1,0, 0,0,-1, 1,0,0;
+    Eigen::Matrix3d R_yaw_ex = Eigen::AngleAxisd(yaw/180.0*M_PI, Eigen::Vector3d::UnitZ()).toRotationMatrix();
+    Sophus::SE3d init_se3_ex(R_init * R_yaw_ex, init_ex_rtk_slam);
+
     std::cout << "init_ex_rtk_slam: " << init_ex_rtk_slam.transpose() << std::endl;
-    RTKSlamCalibrator calibrator(nh, init_ex_rtk_slam);
+    RTKSlamCalibrator calibrator(nh, init_se3_ex);
 
 #ifdef ROS1_BUILD
     ros::spin();

@@ -45,8 +45,8 @@ TrajectoryAligner::TrajectoryAligner(
     
     // 初始化参考SE3位姿
     if (!rtk_poses_.empty()) {
-        ref_se3_ecef_ = rtk_poses_[0];
         ref_ecef_ = rtk_poses_[0].translation();
+        yaw_ = 0;
     }
 }
 
@@ -68,6 +68,16 @@ Matrix<T,3,3> getR_yaw_inv(const T& yaw) {
                 -sin_yaw,  cos_yaw, T(0),
                  T(0),     T(0),    T(1);
     return R_yaw_inv;
+}
+template <typename T>
+Matrix<T,3,3> getR_yaw(const T& yaw) {
+    T cos_yaw = ceres::cos(yaw);
+    T sin_yaw = ceres::sin(yaw);
+    Matrix<T,3,3> R_yaw;
+    R_yaw << cos_yaw, -sin_yaw, T(0),
+             sin_yaw,  cos_yaw, T(0),
+             T(0),     T(0),    T(1);
+    return R_yaw;
 }
 
 // Mode 1: 位置对齐残差函数 (保持不变)
@@ -126,43 +136,31 @@ bool TrajectoryAligner::SE3AlignmentResidual::operator()(
     SE3T T_ex(q_ex, t_ex);
 
     // Yaw旋转（仅绕Z轴）
-    T cos_yaw = ceres::cos(*yaw);
-    T sin_yaw = ceres::sin(*yaw);
-    Matrix3T R_yaw_inv;
-    R_yaw_inv << cos_yaw, sin_yaw, T(0.0),
-                -sin_yaw, cos_yaw, T(0.0),
-                 T(0.0),  T(0.0), T(1.0);
-    SE3T T_yaw_inv(R_yaw_inv, Vector3T::Zero());
+    Matrix3T R_yaw = getR_yaw(*yaw);
+    SE3T T_yaw(Sophus::SO3<T>(R_yaw), Vector3T::Zero());
     
     // ECEF到ENU变换
     Vector3T ref_ecef_vec(ref_ecef[0], ref_ecef[1], ref_ecef[2]);
     Matrix3T R_enu_ecef = ComputeRotationEcefToEnu(getVec3d(ref_ecef_vec)).template cast<T>();
-    SE3T T_enu_ecef(R_enu_ecef, Vector3T::Zero());
+    Matrix3T R_nwu_enu = Eigen::AngleAxisd(-M_PI/2, Eigen::Vector3d::UnitZ()).toRotationMatrix().template cast<T>();
 
     SE3T T_rtk = rtk_pose_.template cast<T>();
-    SE3T T_ref = ref_se3_ecef_.template cast<T>();
     SE3T T_slam = slam_pose_.template cast<T>();
-    
-    
-    // 变换链计算：
-    // T_predicted = T_yaw_inv * T_enu_ecef * (T_rtk * T_ref_inv) * T_ex_inv
-    SE3T T_predicted = T_yaw_inv * T_enu_ecef * (T_rtk * T_ref.inverse()) * T_ex.inverse();
-    SE3T T_error = T_predicted * T_slam.inverse();
-    
-    // 使用SE3的log映射直接获取6DOF残差
-    Vector3T log_translation = T_error.translation();
-    Vector3T log_rotation = T_error.so3().log();
-    
-    // 位置残差 (3DOF)
-    residual[0] = log_translation[0];
-    residual[1] = log_translation[1]; 
-    residual[2] = log_translation[2];
-    
-    // 姿态残差 (3DOF，但Y轴/pitch固定)
-    residual[3] = log_rotation[0];  // roll
-    residual[4] = T(0.0);           // pitch固定 (高程不可观)
-    residual[5] = log_rotation[2];  // yaw
-    
+    SE3T T_rtk_innwu = T_rtk; 
+    T_rtk_innwu.translation() = R_nwu_enu * R_enu_ecef * (T_rtk.translation() - ref_ecef_vec); 
+    SE3T T_slam_innwu = T_yaw * T_slam * T_ex;
+    SE3T T_error = T_rtk_innwu * T_slam_innwu.inverse();
+    // Vector3T err_t = T_error.translation();
+    Vector3T err_t = T_rtk_innwu.translation() - T_slam_innwu.translation();
+    Vector3T err_r = T_error.so3().log();
+
+    residual[0] = err_t[0];
+    residual[1] = err_t[1];
+    residual[2] = err_t[2];
+    residual[3] = err_r[0];
+    residual[4] = err_r[1];
+    residual[5] = err_r[2];
+
     return true;
 }
 
@@ -225,7 +223,6 @@ bool TrajectoryAligner::Solve() {
                 new ceres::AutoDiffCostFunction<SE3AlignmentResidual, 6, 1, 3, 4, 3>(
                     new SE3AlignmentResidual(rtk_poses_[i], 
                                            slam_poses_[i],
-                                           ref_se3_ecef_,
                                            y_t_ex_init_));
             
             problem.AddResidualBlock(cost_function, nullptr,
@@ -251,6 +248,7 @@ bool TrajectoryAligner::Solve() {
     return summary.IsSolutionUsable();
 }
 
+static int frame_count = 0;
 std::vector<Eigen::Vector3d> TrajectoryAligner::GetAlignedTrajectory() const{
     std::vector<Eigen::Vector3d> aligned_trajectory;
     
@@ -273,24 +271,61 @@ std::vector<Eigen::Vector3d> TrajectoryAligner::GetAlignedTrajectory() const{
         // Mode 2: SE3模式 - 实现完整的对齐轨迹计算
         aligned_trajectory.reserve(rtk_poses_.size());
         
-        Eigen::Matrix3d R_yaw_inv = getR_yaw_inv(yaw_);
+        Eigen::Matrix3d R_yaw = getR_yaw(yaw_);
         Eigen::Matrix3d R_enu_ecef = ComputeRotationEcefToEnu(ref_ecef_);
+        Eigen::Matrix3d R_nwu_enu = Eigen::AngleAxisd(-M_PI/2, Eigen::Vector3d::UnitZ()).toRotationMatrix();
         
-        // 外参变换
-        Eigen::Matrix3d R_ex = se3_ex_.rotationMatrix();
-        Eigen::Vector3d t_ex_constrained(se3_ex_.translation()[0], y_t_ex_init_, se3_ex_.translation()[2]);
         
         for (size_t i = 0; i < rtk_poses_.size(); ++i) {
             // 变换链：T_predicted = T_yaw_inv * T_enu_ecef * (T_rtk * T_ref_inv) - T_ex
-            Eigen::Vector3d pos_rel = rtk_poses_[i].translation() - ref_se3_ecef_.translation();
-            Eigen::Vector3d pos_enu = R_enu_ecef * pos_rel;
-            Eigen::Vector3d pos_aligned = R_yaw_inv * pos_enu;
-            
-            // 正确应用外参
-            Eigen::Vector3d pos_predicted = pos_aligned - R_ex * t_ex_constrained;
-            
-            aligned_trajectory.push_back(pos_predicted);
+            Eigen::Vector3d pos_nwu = R_nwu_enu * R_enu_ecef * (rtk_poses_[i].translation() - ref_ecef_);
+            Sophus::SE3d T_nwu_rtk(rtk_poses_[i].so3(), pos_nwu);
+            Sophus::SE3d T_local_slam = Sophus::SE3d(R_yaw, Eigen::Vector3d::Zero()).inverse() * T_nwu_rtk * se3_ex_.inverse();
+
+            aligned_trajectory.push_back(T_local_slam.translation());
         }
+
+        // auto print_pose = [](std::ostream& os, const Sophus::SE3d& pose, int i) {
+        //     const double arrow_length = 0.05;
+        //     Eigen::Matrix3d R = pose.so3().matrix();
+        //     const Eigen::Vector3d pt = pose.translation();
+        //     const Eigen::Vector3d px = pt + R * Eigen::Vector3d(arrow_length, 0, 0);
+        //     const Eigen::Vector3d py = pt + R * Eigen::Vector3d(0, arrow_length, 0);
+        //     const Eigen::Vector3d pz = pt + R * Eigen::Vector3d(0, 0, arrow_length);
+
+        //     os << pt[0] << "," << pt[1] << "," << pt[2] << "," << i << ",0" << std::endl;
+        //     os << px[0] << "," << px[1] << "," << px[2] << "," << i << ",1" << std::endl;
+        //     os << py[0] << "," << py[1] << "," << py[2] << "," << i << ",2" << std::endl;
+        //     os << pz[0] << "," << pz[1] << "," << pz[2] << "," << i << ",3" << std::endl;
+        // };
+
+        // {
+        //     frame_count++;
+        //     Sophus::SE3d T_yaw_slam(R_yaw, Eigen::Vector3d::Zero());
+        //     std::cout << "current yaw=" << yaw_*180/M_PI << ", frame=" << frame_count << std::endl;
+
+        //     std::string outputs_path = "/home/ll/C/ws/zcf_GNSS_Driver_ws/outputs/";
+        //     std::ofstream nwu_slam_tri(outputs_path + "nwu_slam_" + std::to_string(frame_count) + ".txt");
+        //     std::ofstream local_slam_tri(outputs_path + "local_slam_" + std::to_string(frame_count) + ".txt");
+        //     for(int i=0; i<slam_poses_.size(); i++){
+        //         Sophus::SE3d T_nwu_rtk = T_yaw_slam * slam_poses_[i] * se3_ex_;
+        //         print_pose(nwu_slam_tri, T_nwu_rtk, i);
+        //         print_pose(local_slam_tri, slam_poses_[i], i);
+        //     }nwu_slam_tri.close(); local_slam_tri.close();
+
+        //     std::ofstream nwu_rtk_tri(outputs_path + "nwu_rtk_" + std::to_string(frame_count) + ".txt");
+        //     std::ofstream local_rtk_tri(outputs_path + "local_rtk_" + std::to_string(frame_count) + ".txt");
+        //     for(int i=0; i<rtk_poses_.size(); i++){
+        //         Eigen::Matrix3d R = rtk_poses_[i].so3().matrix();
+        //         const Eigen::Vector3d pt = R_nwu_enu * R_enu_ecef *(rtk_poses_[i].translation() - ref_ecef_);
+        //         Sophus::SE3d T_nwu_rtk(R, pt);
+        //         print_pose(nwu_rtk_tri, T_nwu_rtk, i);
+
+        //         Sophus::SE3d T_local_slam = T_yaw_slam.inverse() * T_nwu_rtk * se3_ex_.inverse();
+        //         print_pose(local_rtk_tri, T_local_slam, i);
+        //     }nwu_rtk_tri.close(); local_rtk_tri.close();
+
+        // }
     }
     return aligned_trajectory;
 }

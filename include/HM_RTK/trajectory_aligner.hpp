@@ -82,11 +82,9 @@ private:
     struct SE3AlignmentResidual {
         SE3AlignmentResidual(const Sophus::SE3d& rtk_pose,
                             const Sophus::SE3d& slam_pose,
-                            const Sophus::SE3d& ref_se3_ecef,
                             double y_t_ex_init)
             : rtk_pose_(rtk_pose), 
               slam_pose_(slam_pose),
-              ref_se3_ecef_(ref_se3_ecef),
               y_t_ex_init_(y_t_ex_init) {}
 
         template <typename T>
@@ -98,7 +96,6 @@ private:
 
         Sophus::SE3d rtk_pose_;
         Sophus::SE3d slam_pose_;
-        Sophus::SE3d ref_se3_ecef_;
         double y_t_ex_init_;
     };
 
@@ -112,7 +109,6 @@ private:
     
     // Mode 2 专用参数
     Sophus::SE3d se3_ex_ = Sophus::SE3d();
-    Sophus::SE3d ref_se3_ecef_ = Sophus::SE3d();
     
     // Mode 1 数据存储
     std::vector<Eigen::Vector3d> rtk_trajectory_;

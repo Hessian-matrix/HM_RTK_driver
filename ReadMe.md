@@ -32,7 +32,7 @@
 
 系统会根据接收到的RTK数据类型自动选择模式：
 - 接收 `/baton/rtk` (sensor_msgs::NavSatFix) → 3DOF模式
-- 接收 `/baton/rtk_6DOF` (nav_msgs::Odometry) → 6DOF模式
+- 接收 `/baton/rtk_sixdof` (nav_msgs::Odometry) → 6DOF模式
 
 ## preinstall
 - ros 
@@ -106,11 +106,11 @@ git submodule update --init --recursive --force
 - **SLAM数据**: 6DOF位姿信息
 - **标定参数**: 5DOF外参（x,z,roll,pitch,yaw）+ anchor点
 - **固定参数**: y方向外参（高程仍不可观）
-- **话题**: `/baton/rtk_6DOF`
+- **话题**: `/baton/rtk_sixdof`
 
 ### 模式自动检测
 系统会根据接收到的数据自动选择模式：
-- 如果收到 `/baton/rtk_6DOF` 数据 → 自动切换到6DOF模式
+- 如果收到 `/baton/rtk_sixdof` 数据 → 自动切换到6DOF模式
 - 否则使用传统的3DOF模式
 
 ### 标定原理
@@ -128,16 +128,28 @@ $$
 #### 6DOF RTK模式（升级）
 使用SE3群进行6DOF变换表示，同时标定位置和姿态外参：
 
+6DOF标定的公式基础：
+
 $$
-    \begin{aligned} 
-    T_{cam}^{world} &= SE3_{yaw}^{-1} \cdot SE3_{ecef}^{enu} \cdot (SE3_{rtk}^{ecef} \cdot SE3_{ref}^{-1}) \cdot SE3_{ex}^{-1}
-    \end{aligned}
+\begin{align} T_{rtk}^{nwu,0} & = T_{local}^{nwu,0} * T_{cam}^{local} * T_{rtk}^{cam} \\ &= [R_{rtk}^{nwu}, R_{enu}^{nwu}R_{ecef}^{enu,0}(t_{rtk}^{ecef} - t_{ref}^{ecef})] \end{align}
 $$
 
-其中：
-- $SE3_{ex}$: RTK到相机的6DOF外参变换
-- $SE3_{yaw}$: 绕Z轴的对齐变换
-- $SE3_{ecef}^{enu}$: ECEF到ENU的坐标变换
+其中$T_{local}^{nwu,0}$  就是 $R_{yaw}$ ; $T_{rtk}^{cam}$  就是要标定的外参 ;  $T_{cam}^{local}$ 就是SLAM的Pose。
+
+第二行  $R^{nwu}_{rtk}$ $t_{rtk}^{ecef}$就是6DOFRTK的朝向读数， $R_{ecef}^{enu,0} t_{ref}^{ecef}$ 就是slam坐标系原点的 ecef坐标。
+
+因此可推导出：
+
+$$
+T_{yaw}*T_{cam}^{slam}*T_{ex} = [R_{rtk}^{nwu}, R_{enu}^{nwu}R_{ecef}^{enu,0}(t_{rtk}^{ecef} - t_{ref}^{ecef})] 
+$$
+
+进而推导出：
+
+$$
+\begin{align} R_{yaw}*R_{slam}*R_{ex} &= R_{rtk} \\ R_{yaw}*(R_{slam}t_{ex}+t_{slam}) &= R_{ref}*(t_{rtk} - t_{ref}) \end{align}
+$$
+
 
 ### 使用方法
 
@@ -164,7 +176,7 @@ $$
 
 #### 6DOF RTK模式使用
 1. **发布6DOF RTK数据**：
-   - 确保有节点发布 `/baton/rtk_6DOF` 话题（nav_msgs::Odometry类型）
+   - 确保有节点发布 `/baton/rtk_sixdof` 话题（nav_msgs::Odometry类型）
    - 数据应包含完整的位置和姿态信息
 
 2. **配置初始外参**：

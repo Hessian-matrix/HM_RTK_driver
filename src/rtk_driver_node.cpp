@@ -28,7 +28,11 @@ void publishExPose(ros_adapter::NodeHandle nh) {
             pose.pose.position.y = ex_rtk_slam.y();
             pose.pose.position.z = ex_rtk_slam.z();
             pose.pose.orientation.w = 1.0;
+#ifdef ROS1_BUILD
+            pub_ex_pose.publish(pose);
+#else
             pub_ex_pose->publish(pose);
+#endif
             rate.sleep();
         } catch (const ros_adapter::Exception& e) {
             ROS_ERROR_STREAM("Ex pose publisher error: " << e.what());
@@ -158,7 +162,11 @@ int main(int argc, char **argv) {
                     {
                         StringMsg msg;
                         msg.data = nmea;
+#ifdef ROS1_BUILD
+                        pub_rtk_nmea.publish(msg);
+#else
                         pub_rtk_nmea->publish(msg);
+#endif
                         std::cout<<nmea;
                     }                    
 
@@ -172,7 +180,11 @@ int main(int argc, char **argv) {
                         // nmea = nmea + "@" + std::to_string(time_now);//测试 打上系统时间
                         StringMsg msg;
                         msg.data = nmea;
+#ifdef ROS1_BUILD
+                        pub_rtk_nmea.publish(msg);	//发布GGA字符串
+#else
                         pub_rtk_nmea->publish(msg);	//发布GGA字符串
+#endif
                         ntrip_client.set_location(gnss_pos_msg.latitude, gnss_pos_msg.longitude);
                         std::cout << nmea;
                     }

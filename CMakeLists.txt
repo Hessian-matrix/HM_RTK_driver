@@ -59,7 +59,8 @@ add_subdirectory(3rdParty/ntrip)
 
 # 第三方库配置 - 使用更通用的查找方式
 find_package(Eigen3 REQUIRED)
-set(Ceres_DIR "/home/ll/C/Libs/ceres-solver/ceres-solver-2.2.0/install/lib/cmake/Ceres/")
+# set(Glog_DIR "/home/ll/C/Libs/glog/glog-0.6.0/install/lib/cmake/glog/")
+# set(Ceres_DIR "/home/ll/C/Libs/ceres-solver/ceres-solver-2.2.0/install/lib/cmake/Ceres/")
 find_package(Ceres REQUIRED)
 find_package(Boost REQUIRED COMPONENTS regex)
 

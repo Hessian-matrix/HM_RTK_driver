@@ -2,13 +2,17 @@
 #include "HM_RTK/serial_hm.hpp"
 #include "HM_RTK/ros_adapter.hpp"
 #include "ntrip/ntrip_client.h"
+#include <Eigen/Core>
+#include <Eigen/Geometry>
 
 Hessian::Serial hm_serial;
 ros_adapter::Publisher_t<StringMsg> pub_rtk_nmea;
 ros_adapter::Publisher_t<PoseStampedMsg> pub_ex_pose;
 libntrip::NtripClient ntrip_client;
 
-Eigen::Vector3d ex_rtk_slam(0, 0, 0);
+// 6DOF外参：平移 + 四元数旋转
+Eigen::Vector3d ex_rtk_slam_translation(0, 0, 0);
+Eigen::Quaterniond ex_rtk_slam_rotation(1, 0, 0, 0);  // w, x, y, z
 std::atomic<bool> stop_ex_publish(false);
 
 using namespace Hessian;
@@ -24,10 +28,19 @@ void publishExPose(ros_adapter::NodeHandle nh) {
             pose.header.stamp = ros_adapter::now(nh);
 #endif
             pose.header.frame_id = "rtk";
-            pose.pose.position.x = ex_rtk_slam.x();
-            pose.pose.position.y = ex_rtk_slam.y();
-            pose.pose.position.z = ex_rtk_slam.z();
-            pose.pose.orientation.w = 1.0;
+            
+            // 发布6DOF外参：平移 + 旋转
+            pose.pose.position.x = ex_rtk_slam_translation.x();
+            pose.pose.position.y = ex_rtk_slam_translation.y();
+            pose.pose.position.z = ex_rtk_slam_translation.z();
+            
+            // 四元数旋转 (归一化确保有效性)
+            ex_rtk_slam_rotation.normalize();
+            pose.pose.orientation.x = ex_rtk_slam_rotation.x();
+            pose.pose.orientation.y = ex_rtk_slam_rotation.y();
+            pose.pose.orientation.z = ex_rtk_slam_rotation.z();
+            pose.pose.orientation.w = ex_rtk_slam_rotation.w();
+            
 #ifdef ROS1_BUILD
             pub_ex_pose.publish(pose);
 #else
@@ -65,11 +78,23 @@ int main(int argc, char **argv) {
     ros_adapter::getParam(nh, "pub_rtk_nmea_topic", pub_rtk_nmea_topic, std::string("/rtk_nmea"));
     ros_adapter::getParam(nh, "pub_rtk_ex_pose_topic", pub_rtk_ex_pose_topic, std::string("/rtk_extrinsic"));
 
-    double ex_x, ex_y, ex_z;
-    ros_adapter::getParam(nh, "ex_rtk_slam_x", ex_x, 0.0);
-    ros_adapter::getParam(nh, "ex_rtk_slam_y", ex_y, 0.0);
-    ros_adapter::getParam(nh, "ex_rtk_slam_z", ex_z, 0.0);
-    ex_rtk_slam = Eigen::Vector3d(ex_x, ex_y, ex_z);
+    // 读取6DOF外参参数
+    double ex_tx, ex_ty, ex_tz;
+    double ex_qx, ex_qy, ex_qz, ex_qw;
+    
+    ros_adapter::getParam(nh, "ex_rtk_slam_tx", ex_tx, 0.0);
+    ros_adapter::getParam(nh, "ex_rtk_slam_ty", ex_ty, 0.0);
+    ros_adapter::getParam(nh, "ex_rtk_slam_tz", ex_tz, 0.0);
+    ros_adapter::getParam(nh, "ex_rtk_slam_qx", ex_qx, 0.0);
+    ros_adapter::getParam(nh, "ex_rtk_slam_qy", ex_qy, 0.0);
+    ros_adapter::getParam(nh, "ex_rtk_slam_qz", ex_qz, 0.0);
+    ros_adapter::getParam(nh, "ex_rtk_slam_qw", ex_qw, 1.0);
+    
+    ex_rtk_slam_translation = Eigen::Vector3d(ex_tx, ex_ty, ex_tz);
+    ex_rtk_slam_rotation = Eigen::Quaterniond(ex_qw, ex_qx, ex_qy, ex_qz);
+    
+    // 确保四元数归一化
+    ex_rtk_slam_rotation.normalize();
 
     pub_rtk_nmea = ros_adapter::advertise<StringMsg>(nh, pub_rtk_nmea_topic, 5);
     pub_ex_pose = ros_adapter::advertise<PoseStampedMsg>(nh, pub_rtk_ex_pose_topic, 5);
@@ -82,7 +107,10 @@ int main(int argc, char **argv) {
     ROS_INFO_STREAM("RTK Port: " << rtk_port);
     ROS_INFO_STREAM("RTK Baudrate: " << rtk_baudrate);
 
-    ROS_INFO_STREAM("Ex RTK-SLAM: " << ex_rtk_slam.transpose());
+    ROS_INFO_STREAM("6DOF Ex RTK-SLAM Translation: " << ex_rtk_slam_translation.transpose());
+    ROS_INFO_STREAM("6DOF Ex RTK-SLAM Rotation (xyzw): " << ex_rtk_slam_rotation.x() << " " 
+                    << ex_rtk_slam_rotation.y() << " " << ex_rtk_slam_rotation.z() << " " 
+                    << ex_rtk_slam_rotation.w());
 
     // 参数有效性检查
     if (rtk_port.empty()) {

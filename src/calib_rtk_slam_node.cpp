@@ -110,10 +110,10 @@ private:
         // Open the file with the full path
         std::ofstream outResults(results_path);
         ROS_INFO("Saving results to: %s", results_path.c_str());
-        
-        outResults << "mode,n,converge,yaw,ex_x,ex_y,ex_z,err_ave,err_max,directional_distribution\n";
 
-        std::vector<Eigen::Vector3d> exs_rtk_slam;
+        outResults << "mode,num_sample,converge,yaw,err_ave,err_max,ex_x,ex_y,ex_z,ex_qw,ex_qx,ex_qy,ex_qz\n";
+
+        std::vector<Sophus::SE3d> exs_rtk_slam;
         CalibrationMode current_mode = CalibrationMode::MODE_3DOF_RTK;
         
         while (ros_adapter::ok() && !stop_optimization_) {
@@ -234,15 +234,15 @@ private:
                         sum_direction += d;
                     }
                     double angle_diff = sum_direction.norm()/R_world_cam.size();
-                    exs_rtk_slam.emplace_back(ex);
+                    exs_rtk_slam.emplace_back(Sophus::SE3d(Eigen::Quaterniond::Identity(), ex));
 
                     printf("Mode: 3DOF, n,%d,converge,%d,yaw,%f,ex,%f,%f,%f,error,%f,%f,%f\n",
                         static_cast<int>(rtk_trajectory.size()),
                         isConverged, yaw, ex.x(), ex.y(), ex.z(),
                         error.first, error.second, angle_diff);
                     outResults << "3DOF," << rtk_trajectory.size() << "," << isConverged << "," << yaw << ","
-                               << ex.x() << "," << ex.y() << "," << ex.z() << ","
-                               << error.first << "," << error.second << "," << angle_diff << "\n" << std::flush;
+                               << error.first << "," << error.second << "," 
+                               << ex.x() << "," << ex.y() << "," << ex.z() << "\n" << std::flush;
                 } else {
                     std::cout << "\r[3DOF Mode] Collecting more moving data... Current trajectory size: " 
                               << rtk_trajectory.size() << std::flush;
@@ -335,20 +335,20 @@ private:
                     Eigen::Vector3d ancher_ecef = aligner.GetRef();
                     Sophus::SE3d se3_ex = aligner.GetSE3Ex();
                     Eigen::Vector3d ex = se3_ex.translation();
-                    Eigen::Vector3d ypr = se3_ex.so3().matrix().eulerAngles(2, 1, 0);
+                    Eigen::Quaterniond ex_q = se3_ex.unit_quaternion();
 
-                    exs_rtk_slam.emplace_back(ex);
+                    exs_rtk_slam.emplace_back(se3_ex);
 
-                    printf("Mode: 6DOF, n,%d,converge,%d,yaw,%f,ancher,%f,%f,%f,ex,%f,%f,%f,euler,%f,%f,%f,error,%f,%f\n",
+                    printf("Mode: 6DOF, n,%d,converge,%d,yaw,%f,ancher,%f,%f,%f,ex,%f,%f,%f,q,%f,%f,%f,%f,error,%f,%f\n",
                         static_cast<int>(rtk_poses.size()), isConverged, yaw, 
                         ancher_ecef.x(), ancher_ecef.y(), ancher_ecef.z(),
                         ex.x(), ex.y(), ex.z(),
-                        ypr.x(), ypr.y(), ypr.z(),
+                        ex_q.w(), ex_q.x(), ex_q.y(), ex_q.z(),
                         error.first, error.second);
                     outResults << "6DOF," << rtk_poses.size() << "," << isConverged << "," << yaw << ","
                                << ex.x() << "," << ex.y() << "," << ex.z() << ","
-                               << ypr.x() << "," << ypr.y() << "," << ypr.z() << ","
-                               << error.first << "," << error.second << ",SE3" << "\n" << std::flush << std::endl;
+                               << error.first << "," << error.second << ","
+                               << ex_q.w() << "," << ex_q.x() << "," << ex_q.y() << "," << ex_q.z() << "\n" << std::flush;
                 } else {
                     std::cout << "\r[6DOF Mode] Collecting more moving data... Current trajectory size: " 
                               << rtk_poses.size() << std::flush << std::endl;
@@ -359,12 +359,16 @@ private:
         }
         
         outResults.close();
-        Eigen::Vector3d ex_ave = Eigen::Vector3d::Zero();
+        Sophus::SE3d ex_ave_se3;
         if(!exs_rtk_slam.empty()){
-            for(const auto& ex : exs_rtk_slam) ex_ave += ex;
+            Eigen::VectorXd ex_ave = Eigen::VectorXd::Zero(6);
+            for(const auto& ex : exs_rtk_slam) ex_ave += ex.log();
             ex_ave /= exs_rtk_slam.size();
+            ex_ave_se3 = Sophus::SE3d::exp(ex_ave);
         }
-        std::cout << "ex_ave: " << ex_ave.transpose() << ", size=" << exs_rtk_slam.size() << std::endl;
+        std::cout << "ex_ave: " << ex_ave_se3.translation().transpose() 
+                << ", q=" << ex_ave_se3.unit_quaternion().coeffs().transpose() 
+                << ", size=" << exs_rtk_slam.size() << std::endl;
         std::cout << "results saved to: " << results_path << std::endl;
     }
 

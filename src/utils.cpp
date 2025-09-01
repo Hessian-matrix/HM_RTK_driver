@@ -1,17 +1,8 @@
 #include "HM_RTK/utils.hpp"
 #include <vector>
 #include <chrono>
-#include <boost/algorithm/string.hpp>
-#include <boost/assign/list_of.hpp>
-#include <boost/asio.hpp>
-#include <boost/regex.hpp>
-#include <iomanip>
 
-#ifdef ROS1_BUILD
-    #include <std_msgs/Header.h>
-#else
-    #include <std_msgs/msg/header.hpp>
-#endif
+
 
 
 namespace Hessian{
@@ -175,4 +166,85 @@ namespace Hessian{
 
         return true;
     }
+
+    bool parse_pub_sixdof_pos(const std::string& unicore,sixdof_pose_with_cov& sixdof_pos_t)
+    {
+        const auto it = unicore.find(";GNSS");
+        const auto it_end = unicore.find("*");
+        if (it == std::string::npos && it_end ==std::string::npos){
+            std::cerr<<"not find AGRIC\n"<<std::endl;
+            return false;
+        }
+        std::string core_str(unicore.begin() + it,unicore.end());
+        // std::cout<<"core_str "<<core_str<<std::endl;
+        std::vector<std::string> unicore_split;
+        boost::split(unicore_split, core_str, boost::is_any_of(","));
+        if (unicore_split.size() < 57){
+            std::cerr << "AGRIC Unicore Sentence Split Failed! split is "<< unicore_split.size() << std::endl;
+            return false;
+        }
+
+        int year = std::strtod(unicore_split[2].c_str(),nullptr);
+        int minute = std::strtod(unicore_split[6].c_str(),nullptr);
+        int state = std::strtod(unicore_split[9].c_str(),nullptr);
+        double yaw = std::strtod(unicore_split[19].c_str(),nullptr);
+        double pitch = std::strtod(unicore_split[20].c_str(),nullptr);
+        double roll = std::strtod(unicore_split[21].c_str(),nullptr);
+        double ecrf_x = std::strtod(unicore_split[32].c_str(),nullptr);
+        double ecrf_y = std::strtod(unicore_split[33].c_str(),nullptr);
+        double ecrf_z = std::strtod(unicore_split[34].c_str(),nullptr);
+        
+        sixdof_pos_t.year = year;
+        sixdof_pos_t.mounth = std::strtod(unicore_split[3].c_str(),nullptr);
+        sixdof_pos_t.day = std::strtod(unicore_split[4].c_str(),nullptr);
+        sixdof_pos_t.hour = std::strtod(unicore_split[5].c_str(),nullptr);
+        sixdof_pos_t.minute = minute;//分
+        sixdof_pos_t.second = std::strtod(unicore_split[7].c_str(),nullptr);//秒
+        sixdof_pos_t.second_gps = std::strtod(unicore_split[47].c_str(),nullptr);/*GPS 周内毫秒*/
+
+        sixdof_pos_t.state = (int)std::strtod(unicore_split[9].c_str(),nullptr);
+        sixdof_pos_t.sat = (int)std::strtod(unicore_split[10].c_str(),nullptr);  /*参与解算 GPS 卫星数*/
+        sixdof_pos_t.sat += (int)std::strtod(unicore_split[11].c_str(),nullptr); /*参与解算北斗卫星数 */
+        sixdof_pos_t.sat += (int)std::strtod(unicore_split[12].c_str(),nullptr); /*参与解算 GLONASS 卫星数 */
+
+        printf("y %d s %d sat:%d state:%d [%f %f %f],[%f %f %f]\n",year,minute,sixdof_pos_t.sat, state,yaw,pitch,roll,ecrf_x,ecrf_y,ecrf_z);
+
+        sixdof_pos_t.ecef_x = std::strtod(unicore_split[32].c_str(),nullptr);
+        sixdof_pos_t.ecef_y = std::strtod(unicore_split[33].c_str(),nullptr);
+        sixdof_pos_t.ecef_z = std::strtod(unicore_split[34].c_str(),nullptr);
+
+        //zyx顺序
+        Eigen::Quaterniond q = Eigen::AngleAxisd(std::strtod(unicore_split[19].c_str(),nullptr)* M_PI /180, Eigen::Vector3d::UnitZ()) *
+        Eigen::AngleAxisd(std::strtod(unicore_split[20].c_str(),nullptr)* M_PI /180, Eigen::Vector3d::UnitY()) *
+        Eigen::AngleAxisd(0.0, Eigen::Vector3d::UnitX());
+
+        sixdof_pos_t.q = q;
+        sixdof_pos_t.xigema_ecef_x = std::strtod(unicore_split[38].c_str(),nullptr);
+        sixdof_pos_t.xigema_ecef_y = std::strtod(unicore_split[39].c_str(),nullptr);
+        sixdof_pos_t.xigema_ecef_z = std::strtod(unicore_split[40].c_str(),nullptr);
+        sixdof_pos_t.xigema_lat = std::strtod(unicore_split[35].c_str(),nullptr);
+        sixdof_pos_t.xigema_lon = std::strtod(unicore_split[36].c_str(),nullptr),/*经度标准差 */
+        sixdof_pos_t.xigema_alt = std::strtod(unicore_split[37].c_str(),nullptr),/*高程标准差*/
+
+        sixdof_pos_t.lat = std::strtod(unicore_split[29].c_str(),nullptr);
+        sixdof_pos_t.lon = std::strtod(unicore_split[30].c_str(),nullptr);/*经纬高 lon*/
+        sixdof_pos_t.alt = std::strtod(unicore_split[31].c_str(),nullptr);/*经纬高 alt*/
+
+        //东北天速度
+        sixdof_pos_t.v_north = std::strtod(unicore_split[23].c_str(),nullptr);/*北方向速度*/
+        sixdof_pos_t.v_east = std::strtod(unicore_split[24].c_str(),nullptr);/*东方向速度 */
+        sixdof_pos_t.v_up = std::strtod(unicore_split[25].c_str(),nullptr);/*天顶方向速度 */
+        
+
+
+        sixdof_pos_t.xigema_vx = std::strtod(unicore_split[26].c_str(),nullptr);/*北方向速度标准差*/
+        sixdof_pos_t.xigema_vx = std::strtod(unicore_split[27].c_str(),nullptr);/*东方向速度标准差*/
+        sixdof_pos_t.xigema_vz = std::strtod(unicore_split[28].c_str(),nullptr);/*天顶方向速度标准差*/
+
+        sixdof_pos_t.pose_type = std::strtod(unicore_split[10].c_str(),nullptr);/*流动站定位状态：*/
+        sixdof_pos_t.speed_type = std::strtod(unicore_split[54].c_str(),nullptr);/*速度解状态有效*/
+
+        return true;
+    }
+
 }

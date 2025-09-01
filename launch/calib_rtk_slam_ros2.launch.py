@@ -1,7 +1,9 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
+    package_path = get_package_share_directory('hm_rtk')
     return LaunchDescription([
         Node(
             package='hm_rtk',
@@ -17,6 +19,7 @@ def generate_launch_description():
                 'sub_rtk_pose_topic': '/rtk_pose',
                 'sub_slam_pose_topic': '/slam_pose',
                 'pub_rtk_ex_pose_topic': '/rtk_extrinsic',
+                'package_path': package_path
             }]
         )
     ])

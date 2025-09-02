@@ -16,8 +16,9 @@ def generate_launch_description():
                 'ex_rtk_slam_y': 0.0, # 地面小车。高程不可观，不参与优化
                 'ex_rtk_slam_z': -0.5,
                 'ex_rtk_slam_yaw': 30.0, # 单位：deg，从SLAM坐标系到RTK坐标系的偏航角。逆时针正，顺时针负
-                'sub_rtk_pose_topic': '/rtk_pose',
-                'sub_slam_pose_topic': '/slam_pose',
+                'sub_rtk_pose_topic': '/baton/rtk',
+                'sub_rtk_sixdof_pose': '/baton/rtk_sixdof',
+                'sub_slam_pose_topic': '/baton/stereo3/odometry',
                 'pub_rtk_ex_pose_topic': '/rtk_extrinsic',
                 'package_path': package_path
             }]

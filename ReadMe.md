@@ -1,5 +1,5 @@
 # HM_RTK_Driver
-本仓库是黑森矩阵的RTK驱动仓库，包含两部分：
+本仓库是黑森矩阵的RTK驱动仓库,同时支持ROS1和ROS2，包含两部分：
 - 驱动层，配合viobot2使用。
 - RTK与Viobot2的外参标定工具（支持3DOF和6DOF RTK两种模式）
 
@@ -59,7 +59,9 @@ git submodule update --init --recursive
 
 # 4. 编译
 cd ../../
-catkin_make
+catkin_make #ros1版本编译
+#或者
+colcon build #ros2版本编译
 ```
 
 ### 已有仓库更新submodule
@@ -197,7 +199,7 @@ $$
 #### 结果查看
 - 会实时输出标定结果，区分显示当前使用的模式（3DOF/6DOF）
 - 最后输出标定均值
-- 结果导出到文件：`HM_RTK/results/rtk_slam_calib_results.csv`
+- 结果导出到文件：`install/hm_rtk/share/hm_rtk/results/rtk_slam_calib_results.csv`
 - 可用Excel查看外参标定结果
 
 ### 输出格式说明

@@ -22,6 +22,16 @@ class RTKSlamCalibrator {
 public:
     RTKSlamCalibrator(ros_adapter::NodeHandle& nh, const Sophus::SE3d& init_ex_rtk_slam)
         : nh_(nh), init_ex_rtk_slam_(init_ex_rtk_slam) {
+        std::string sub_rtk_pose_topic, sub_slam_pose_topic, sub_rtk_sixdof_pose;
+        ros_adapter::getParam(nh, "sub_rtk_pose_topic", sub_rtk_pose_topic, std::string("/baton/rtk"));
+        ros_adapter::getParam(nh, "sub_rtk_sixdof_pose", sub_rtk_sixdof_pose, std::string("/baton/rtk_sixdof"));
+        ros_adapter::getParam(nh, "sub_slam_pose_topic", sub_slam_pose_topic, std::string("/baton/stereo3/odometry"));
+        
+        std::cout<<"=================="<<std::endl;
+        std::cout<<"sub :"<<sub_rtk_pose_topic<<std::endl;
+        std::cout<<"sub :"<<sub_rtk_sixdof_pose<<std::endl;
+        std::cout<<"sub :"<<sub_slam_pose_topic<<std::endl;
+        std::cout<<"=================="<<std::endl;
         
 #ifdef ROS1_BUILD
         // 订阅传统3DOF RTK
@@ -33,16 +43,17 @@ public:
         // 订阅SLAM
         slam_sub_ = nh_.subscribe("/baton/stereo3/odometry", 10, &RTKSlamCalibrator::slamCallback, this);
 #else
+        
         // 订阅传统3DOF RTK
-        rtk_sub_ = nh_->create_subscription<NavSatFixMsg>("/baton/rtk", 10, 
+        rtk_sub_ = nh_->create_subscription<NavSatFixMsg>(sub_rtk_pose_topic, 10, 
             [this](const NavSatFixMsg::SharedPtr msg) { this->rtkCallback(msg); });
         
         // 订阅6DOF RTK (新增)
-        rtk_6dof_sub_ = nh_->create_subscription<OdometryMsg>("/baton/rtk_sixdof", 10,
+        rtk_6dof_sub_ = nh_->create_subscription<OdometryMsg>(sub_rtk_sixdof_pose, 10,
             [this](const OdometryMsg::SharedPtr msg) { this->rtk6DOFCallback(msg); });
         
         // 订阅SLAM
-        slam_sub_ = nh_->create_subscription<OdometryMsg>("/baton/stereo3/imu_odom", 10,
+        slam_sub_ = nh_->create_subscription<OdometryMsg>(sub_slam_pose_topic, 10,
             [this](const OdometryMsg::SharedPtr msg) { this->slamCallback(msg); });
 #endif
         
@@ -111,7 +122,7 @@ private:
         std::ofstream outResults(results_path);
         ROS_INFO("Saving results to: %s", results_path.c_str());
 
-        outResults << "mode,num_sample,converge,yaw,err_ave,err_max,ex_x,ex_y,ex_z,ex_qw,ex_qx,ex_qy,ex_qz\n";
+        outResults << "mode,num_sample,converge,yaw,ex_x,ex_y,ex_z,err_ave,err_max,ex_qw,ex_qx,ex_qy,ex_qz\n";
 
         std::vector<Sophus::SE3d> exs_rtk_slam;
         CalibrationMode current_mode = CalibrationMode::MODE_3DOF_RTK;
@@ -234,7 +245,10 @@ private:
                         sum_direction += d;
                     }
                     double angle_diff = sum_direction.norm()/R_world_cam.size();
-                    exs_rtk_slam.emplace_back(Sophus::SE3d(Eigen::Quaterniond::Identity(), ex));
+                    if(isConverged && rtk_trajectory.size() > 200 && error.first < 0.1 && error.second < 0.2)
+                    {                     
+                        exs_rtk_slam.emplace_back(Sophus::SE3d(Eigen::Quaterniond::Identity(), ex));
+                    }
 
                     printf("Mode: 3DOF, n,%d,converge,%d,yaw,%f,ex,%f,%f,%f,error,%f,%f,%f\n",
                         static_cast<int>(rtk_trajectory.size()),
@@ -262,7 +276,7 @@ private:
 
                 int n1=0, n2=0, n3=0, n4=0, n5=0, n6=0, n7=0;
                 double velocity_thresh = 0.2;
-                int n_start = std::max(1, static_cast<int>(slam_all_.size()) - 25*10);
+                int n_start = std::max(1, static_cast<int>(slam_all_.size()) - 25*20);
                 for (size_t i = n_start; i < slam_all_.size(); ++i) {
                     // 速度检查
                     Eigen::Vector3d slam_pose(slam_all_[i].pose.pose.position.x,
@@ -337,6 +351,9 @@ private:
                     Eigen::Vector3d ex = se3_ex.translation();
                     Eigen::Quaterniond ex_q = se3_ex.unit_quaternion();
 
+                    if(isConverged && rtk_poses.size() > 200 && error.first < 0.1 && error.second < 0.2)
+                        exs_rtk_slam.emplace_back(se3_ex);
+                    
                     exs_rtk_slam.emplace_back(se3_ex);
 
                     printf("Mode: 6DOF, n,%d,converge,%d,yaw,%f,ancher,%f,%f,%f,ex,%f,%f,%f,q,%f,%f,%f,%f,error,%f,%f\n",
@@ -348,7 +365,8 @@ private:
                     outResults << "6DOF," << rtk_poses.size() << "," << isConverged << "," << yaw << ","
                                << ex.x() << "," << ex.y() << "," << ex.z() << ","
                                << error.first << "," << error.second << ","
-                               << ex_q.w() << "," << ex_q.x() << "," << ex_q.y() << "," << ex_q.z() << "\n" << std::flush;
+                               << ex_q.w() << "," << ex_q.x() << "," << ex_q.y() << "," << ex_q.z() << "\n" << std::endl;
+                    std::cout<< std::flush;
                 } else {
                     std::cout << "\r[6DOF Mode] Collecting more moving data... Current trajectory size: " 
                               << rtk_poses.size() << std::flush << std::endl;

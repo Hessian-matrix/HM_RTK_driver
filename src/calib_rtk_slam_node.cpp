@@ -227,7 +227,7 @@ private:
                 }
 
                 // 轨迹对齐优化
-                if (rtk_trajectory.size() > 100) {
+                if (rtk_trajectory.size() > 200) {
                     ROS_INFO("Running 3DOF RTK trajectory alignment, size=%d", static_cast<int>(rtk_trajectory.size()));
                     TrajectoryAligner aligner(rtk_trajectory, slam_trajectory, R_world_cam);
                     aligner.SetInitialRef(static_ref_ecef_);
@@ -298,6 +298,10 @@ private:
                     if(it == rtk_6dof_all_.begin() || it == rtk_6dof_all_.end()) { n3++; continue; }
                     auto it_prev = std::prev(it);
                     if((GET_STAMP_SEC(*it) - GET_STAMP_SEC(*it_prev)) < 1e-3) { n4++; continue; }
+                    
+                    int it_status = round(it->pose.covariance[1]*1e8);
+                    int it_prev_status = round(it_prev->pose.covariance[1]*1e8);
+                    if(it_status != 4 || it_prev_status != 4) { n5++; continue; } // 状态不为RTK固定
 
                     double weight = (curTime - GET_STAMP_SEC(*it_prev)) /
                                     (GET_STAMP_SEC(*it) - GET_STAMP_SEC(*it_prev));
@@ -332,7 +336,7 @@ private:
                 //           << ", n3=" << n3 << ", n4=" << n4 << ", n5=" << n5 << std::endl;
 
                 // SE3轨迹对齐优化
-                if (rtk_poses.size() > 100) {
+                if (rtk_poses.size() > 200) {
                     ROS_INFO("Running 6DOF RTK SE3 trajectory alignment, size=%d", static_cast<int>(rtk_poses.size()));
                     TrajectoryAligner aligner(rtk_poses, slam_poses);
                     
@@ -365,7 +369,7 @@ private:
                     outResults << "6DOF," << rtk_poses.size() << "," << isConverged << "," << yaw << ","
                                << ex.x() << "," << ex.y() << "," << ex.z() << ","
                                << error.first << "," << error.second << ","
-                               << ex_q.w() << "," << ex_q.x() << "," << ex_q.y() << "," << ex_q.z() << "\n" << std::endl;
+                               << ex_q.w() << "," << ex_q.x() << "," << ex_q.y() << "," << ex_q.z() << std::endl;
                     std::cout<< std::flush;
                 } else {
                     std::cout << "\r[6DOF Mode] Collecting more moving data... Current trajectory size: " 
@@ -385,7 +389,7 @@ private:
             ex_ave_se3 = Sophus::SE3d::exp(ex_ave);
         }
         std::cout << "ex_ave: " << ex_ave_se3.translation().transpose() 
-                << ", q=" << ex_ave_se3.unit_quaternion().coeffs().transpose() 
+                << ", q(xyzw)=" << ex_ave_se3.unit_quaternion().coeffs().transpose() 
                 << ", size=" << exs_rtk_slam.size() << std::endl;
         std::cout << "results saved to: " << results_path << std::endl;
     }

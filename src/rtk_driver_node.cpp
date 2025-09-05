@@ -41,11 +41,7 @@ void publishExPose(ros_adapter::NodeHandle nh) {
             pose.pose.orientation.z = ex_rtk_slam_rotation.z();
             pose.pose.orientation.w = ex_rtk_slam_rotation.w();
             
-#ifdef ROS1_BUILD
-            pub_ex_pose.publish(pose);
-#else
-            pub_ex_pose->publish(pose);
-#endif
+            PUBLISH(pub_ex_pose, pose);
             rate.sleep();
         } catch (const ros_adapter::Exception& e) {
             ROS_ERROR_STREAM("Ex pose publisher error: " << e.what());
@@ -135,15 +131,12 @@ int main(int argc, char **argv) {
 		ntrip_client.Init(ntrip_ip, ntrip_port, ntrip_user, ntrip_passwd, ntrip_mountpoint);
 		ntrip_client.OnReceived([] (const char *buffer, int size) {
 			int ret = hm_serial.write( std::string(buffer, size));
-			std::cout << "serial try to write:" << size << ", real write=" << ret << ", drop=" << size - ret << std::endl;
+			std::cout << "[HM_RTK] NTRIP data: tried=" << size << "B, written=" << ret 
+					  << "B, dropped=" << size - ret << "B" << std::endl;
 		});
 		if (!ntrip_client.Run()) {
             ROS_ERROR("NTRIP client start failed! Retrying in 3 seconds...");
-#ifdef ROS1_BUILD
-            ros_adapter::sleep_duration(3.0).sleep();
-#else
-            ros_adapter::sleep_for(3.0);
-#endif
+            SLEEP_FOR(3.0);
             if (!ntrip_client.Run()) {
                 ROS_FATAL("NTRIP client initialization failed!");
                 return EXIT_FAILURE;
@@ -162,11 +155,7 @@ int main(int argc, char **argv) {
         try {
             std::string c = hm_serial.read(1);
             if (c.empty()) {
-#ifdef ROS1_BUILD
-                ros_adapter::sleep_duration(0.001).sleep();
-#else
-                ros_adapter::sleep_for(0.001);
-#endif
+                SLEEP_FOR(0.001);
                 continue;
             }
 
@@ -181,8 +170,8 @@ int main(int argc, char **argv) {
                     bool is_nmea = checksum(nmea);//检查校验和
                     if (!is_nmea)
                     {
-                        std::cerr<<"NMEA Sentence Check Failed!"<<std::endl;
-                        std::cout<<"\033[31m"<<nmea<<"\033[0m"<<std::endl;
+                        std::cerr << "[HM_RTK ERROR] NMEA sentence checksum failed!" << std::endl;
+                        std::cerr << "[HM_RTK] Invalid sentence: " << nmea << std::endl;
                         continue;
                     }
                     
@@ -190,12 +179,8 @@ int main(int argc, char **argv) {
                     {
                         StringMsg msg;
                         msg.data = nmea;
-#ifdef ROS1_BUILD
-                        pub_rtk_nmea.publish(msg);
-#else
-                        pub_rtk_nmea->publish(msg);
-#endif
-                        std::cout<<nmea;
+                        PUBLISH(pub_rtk_nmea, msg);
+                        std::cout << "[HM_RTK DEBUG] RMC: " << nmea;
                     }                    
 
                     if (nmea.find("GGA") != std::string::npos){
@@ -208,13 +193,9 @@ int main(int argc, char **argv) {
                         // nmea = nmea + "@" + std::to_string(time_now);//测试 打上系统时间
                         StringMsg msg;
                         msg.data = nmea;
-#ifdef ROS1_BUILD
-                        pub_rtk_nmea.publish(msg);	//发布GGA字符串
-#else
-                        pub_rtk_nmea->publish(msg);	//发布GGA字符串
-#endif
+                        PUBLISH(pub_rtk_nmea, msg);
                         ntrip_client.set_location(gnss_pos_msg.latitude, gnss_pos_msg.longitude);
-                        std::cout << nmea;
+                        std::cout << "[HM_RTK DEBUG] GGA: " << nmea;
                     }
                 }
             }
@@ -226,21 +207,13 @@ int main(int argc, char **argv) {
                 {
                     StringMsg msg;
                     msg.data = unicore;
-#ifdef ROS1_BUILD
-                        pub_rtk_nmea.publish(msg);	//发布GGA字符串
-#else
-                        pub_rtk_nmea->publish(msg);	//发布GGA字符串
-#endif
-                    // std::cout<<unicore;
+                    PUBLISH(pub_rtk_nmea, msg); //发布GGA字符串
+                    // std::cout << "[HM_RTK DEBUG] AGRICA: " << unicore << std::endl;
                 }
             }
         } catch (const std::exception& e) {
             ROS_ERROR_STREAM("Serial read error: " << e.what());
-#ifdef ROS1_BUILD
-            ros_adapter::sleep_duration(1.0).sleep();
-#else
-            ros_adapter::sleep_for(1.0);
-#endif
+            SLEEP_FOR(1.0);
         }
 #ifdef ROS1_BUILD
         ros_adapter::spinOnce();

@@ -216,6 +216,9 @@ private:
                     Eigen::Vector3d ecef_after = gnss_comm::geo2ecef(
                         Eigen::Vector3d(it->latitude, it->longitude, it->altitude));
                     Eigen::Vector3d rtk_ecef = (1 - weight) * ecef_before + weight * ecef_after;
+                    // 当融合不想要高度时，可取消下面注释
+                    // Eigen::Vector3d lla = gnss_comm::ecef2geo(rtk_ecef); lla[2] = 0.0;
+                    // rtk_ecef = gnss_comm::geo2ecef(lla);
 
                     Eigen::Quaterniond slam_q(slam_all_[i].pose.pose.orientation.w,
                                               slam_all_[i].pose.pose.orientation.x,
@@ -311,6 +314,9 @@ private:
                     Eigen::Vector3d pos_before(it_prev->pose.pose.position.x, it_prev->pose.pose.position.y, it_prev->pose.pose.position.z);
                     Eigen::Vector3d pos_after(it->pose.pose.position.x, it->pose.pose.position.y, it->pose.pose.position.z);
                     Eigen::Vector3d rtk_pos = (1 - weight) * pos_before + weight * pos_after;
+                    // 当融合不想要高度时，可取消下面注释
+                    // Eigen::Vector3d lla = gnss_comm::ecef2geo(rtk_pos); lla[2] = 0.0;
+                    // rtk_pos = gnss_comm::geo2ecef(lla);
                     
                     // 姿态插值（使用slerp）
                     Eigen::Quaterniond q_before(it_prev->pose.pose.orientation.w, it_prev->pose.pose.orientation.x, 

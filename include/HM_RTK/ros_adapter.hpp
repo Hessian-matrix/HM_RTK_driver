@@ -153,7 +153,9 @@
     // 时间戳访问宏
     #define GET_STAMP_SEC(msg) ((msg).header.stamp.toSec())
     #define SET_STAMP_SEC(msg, sec) ((msg).header.stamp.fromSec(sec))
-    
+    #define SLEEP_FOR(sec) (ros_adapter::sleep_duration(sec).sleep())
+    #define PUBLISH(pub, msg) (pub.publish(msg))
+
 #elif defined(ROS2_BUILD)
     using StringMsg = std_msgs::msg::String;
     using PoseStampedMsg = geometry_msgs::msg::PoseStamped;
@@ -164,6 +166,9 @@
     // 时间戳访问宏
     #define GET_STAMP_SEC(msg) (ros_adapter::stampToSec((msg).header.stamp))
     #define SET_STAMP_SEC(msg, sec) (ros_adapter::fromSec(sec, (msg).header.stamp))
+    #define SLEEP_FOR(sec) (ros_adapter::sleep_for(sec))
+    #define PUBLISH(pub, msg) (pub->publish(msg))
+
     
 #endif
 

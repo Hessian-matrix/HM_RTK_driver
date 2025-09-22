@@ -122,7 +122,7 @@ private:
         std::ofstream outResults(results_path);
         ROS_INFO("Saving results to: %s", results_path.c_str());
 
-        outResults << "mode,num_sample,converge,yaw,ex_x,ex_y,ex_z,err_ave,err_max,ex_qw,ex_qx,ex_qy,ex_qz\n";
+        outResults << "mode,num_sample,converge,yaw,ex_x,ex_y,ex_z,err_ave,err_max,ex_qw,ex_qx,ex_qy,ex_qz,yaw,pit,row\n";
 
         std::vector<Sophus::SE3d> exs_rtk_slam;
         CalibrationMode current_mode = CalibrationMode::MODE_3DOF_RTK;
@@ -365,17 +365,19 @@ private:
                         exs_rtk_slam.emplace_back(se3_ex);
                     
                     exs_rtk_slam.emplace_back(se3_ex);
-
-                    printf("Mode: 6DOF, n,%d,converge,%d,yaw,%f,ancher,%f,%f,%f,ex,%f,%f,%f,q,%f,%f,%f,%f,error,%f,%f\n",
+                    Eigen::Vector3d yaw_eular = ex_q.toRotationMatrix().eulerAngles(2,1,0);
+                    yaw_eular = yaw_eular / M_PI * 180;
+                    printf("Mode: 6DOF, n,%d,converge,%d,yaw,%f,ancher,%f,%f,%f,ex,%f,%f,%f,q,%f,%f,%f,%f,error,%f,%f,ypr:%f %f %f\n",
                         static_cast<int>(rtk_poses.size()), isConverged, yaw, 
                         ancher_ecef.x(), ancher_ecef.y(), ancher_ecef.z(),
                         ex.x(), ex.y(), ex.z(),
                         ex_q.w(), ex_q.x(), ex_q.y(), ex_q.z(),
-                        error.first, error.second);
+                        error.first, error.second,yaw_eular[0], yaw_eular[1], yaw_eular[2]);
                     outResults << "6DOF," << rtk_poses.size() << "," << isConverged << "," << yaw << ","
                                << ex.x() << "," << ex.y() << "," << ex.z() << ","
                                << error.first << "," << error.second << ","
-                               << ex_q.w() << "," << ex_q.x() << "," << ex_q.y() << "," << ex_q.z() << std::endl;
+                               << ex_q.w() << "," << ex_q.x() << "," << ex_q.y() << "," << ex_q.z() << "," << 
+                               yaw_eular[0] <<"," << yaw_eular[1] <<"," << yaw_eular[2] << std::endl;
                     std::cout<< std::flush;
                 } else {
                     std::cout << "\r[6DOF Mode] Collecting more moving data... Current trajectory size: " 

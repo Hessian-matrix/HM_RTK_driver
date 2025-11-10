@@ -304,7 +304,10 @@ private:
                     
                     int it_status = round(it->pose.covariance[1]*1e8);
                     int it_prev_status = round(it_prev->pose.covariance[1]*1e8);
+                    int it_heading_status = round(it->pose.covariance[2]*1e8);
+                    int it_heading_prev_status = round(it_prev->pose.covariance[2]*1e8);
                     if(it_status != 4 || it_prev_status != 4) { n5++; continue; } // 状态不为RTK固定
+                    if(it_heading_status != 4 || it_heading_prev_status != 4) { n5++; continue; } // 状态不为RTK固定
 
                     double weight = (curTime - GET_STAMP_SEC(*it_prev)) /
                                     (GET_STAMP_SEC(*it) - GET_STAMP_SEC(*it_prev));

@@ -66,7 +66,7 @@ int main(int argc, char **argv) {
     
     ros_adapter::getParam(nh, "ntrip_ip", ntrip_ip, std::string("127.0.0.1"));
     ros_adapter::getParam(nh, "ntrip_port", ntrip_port, 8002);
-    ros_adapter::getParam(nh, "ntrip_user", ntrip_user, std::string("user"));
+    ros_adapter::getParam(nh, "ntrip_user", ntrip_user, std::string("null"));
     ros_adapter::getParam(nh, "ntrip_passwd", ntrip_passwd, std::string("password"));
     ros_adapter::getParam(nh, "ntrip_mountpoint", ntrip_mountpoint, std::string("RTCM33_GRCEJ"));
     ros_adapter::getParam(nh, "rtk_port", rtk_port, std::string("/dev/ttyUSB0"));
@@ -127,7 +127,7 @@ int main(int argc, char **argv) {
     }
 
 	// Ntrip 服务
-	if(!ntrip_mountpoint.empty()){
+	if(ntrip_user != "null"){
 		ntrip_client.Init(ntrip_ip, ntrip_port, ntrip_user, ntrip_passwd, ntrip_mountpoint);
 		ntrip_client.OnReceived([] (const char *buffer, int size) {
 			int ret = hm_serial.write( std::string(buffer, size));
@@ -194,7 +194,8 @@ int main(int argc, char **argv) {
                         StringMsg msg;
                         msg.data = nmea;
                         PUBLISH(pub_rtk_nmea, msg);
-                        ntrip_client.set_location(gnss_pos_msg.latitude, gnss_pos_msg.longitude);
+                        if(ntrip_user != "null")
+                            ntrip_client.set_location(gnss_pos_msg.latitude, gnss_pos_msg.longitude);
                         std::cout << "[HM_RTK DEBUG] GGA: " << nmea;
                     }
                 }

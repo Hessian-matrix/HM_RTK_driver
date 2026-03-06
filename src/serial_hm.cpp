@@ -25,12 +25,12 @@ namespace Hessian{
         try {
             _fd = uart_open(port.c_str());
             if(_fd == -1){
-                fprintf(stderr,"[Serial Error] uart_open %s error\n", port.c_str());
+                std::cerr << "[HM_RTK ERROR] Serial port open failed: " << port << std::endl;
                 exit(EXIT_FAILURE);
             }
             if(uart_set(baudrate,nBits,nEvent,nStop) == -1)
             {
-                fprintf(stderr,"[Serial Error] uart set failed!\n");
+                std::cerr << "[HM_RTK ERROR] Serial port configuration failed!" << std::endl;
                 exit(EXIT_FAILURE);
             }
 
@@ -38,16 +38,16 @@ namespace Hessian{
             _baudrate = baudrate;
             _read_timeout = read_timeout;
             _write_timeout = write_timeout;
-            std::cout<<"write time out"<<_write_timeout<<std::endl;
+            std::cout << "[HM_RTK] Write timeout set to: " << _write_timeout << "ms" << std::endl;
             _nBits = nBits;
             _nEvent = nEvent;
             _nStop = nStop;
             std::stringstream ss;
             ss << "{" << _fd << "}" << port << ":" << baudrate << "[" << nBits << "," << nEvent << "," << nStop << "]";
             description = ss.str();
-            std::cout << "Serial create finish, " << description << std::endl;
+            std::cout << "[HM_RTK] Serial port configured: " << description << std::endl;
         } catch (const std::exception& e) {
-            std::cerr << "Serial reset failed: " << e.what() << std::endl;
+            std::cerr << "[HM_RTK ERROR] Serial reset failed: " << e.what() << std::endl;
             _fd = 0;  // 确保文件描述符重置
             throw;  // 重新抛出异常
         }
@@ -63,7 +63,7 @@ namespace Hessian{
 #ifdef THROW_EXCEPTION
         throw(SerialException(description, errInfo.c_str()));
 #else
-        std::cout << "[Serial Error] " << description << " : " << errInfo << std::endl;
+        std::cerr << "[HM_RTK ERROR] " << description << " : " << errInfo << std::endl;
         reset(_port, _baudrate, _read_timeout, _write_timeout, _nBits, _nEvent, _nStop);
 #endif 
     }
@@ -152,18 +152,18 @@ namespace Hessian{
             return(-1);
         }
         else
-            printf("open %s success!\n",pathname);
+            std::cout << "[HM_RTK] Serial port opened successfully: " << pathname << std::endl;
         if(isatty(STDIN_FILENO)==0)
-            printf("standard input is not a terminal device\n");
+            std::cout << "[HM_RTK] Standard input is not a terminal device" << std::endl;
         else
-            printf("isatty success!\n");
+            std::cout << "[HM_RTK] Terminal device check passed" << std::endl;
         return _fd;
     }
     int Serial::uart_set(int nSpeed, int nBits, char nEvent, int nStop){
         struct termios newtio,oldtio;
         if  ( tcgetattr( _fd,&oldtio)  !=  0) {
             perror("SetupSerial 1");
-            printf("tcgetattr( _fd,&oldtio) -> %d\n",tcgetattr( _fd,&oldtio));
+            std::cerr << "[HM_RTK ERROR] tcgetattr failed with code: " << tcgetattr(_fd, &oldtio) << std::endl;
             return -1;
         }
         bzero( &newtio, sizeof( newtio ) );
@@ -240,14 +240,14 @@ namespace Hessian{
             perror("com set error");
             return -1;
         }
-        printf("set done!\n");
+        std::cout << "[HM_RTK] Serial port configuration completed" << std::endl;
         return 0;
     }
     int Serial::uart_close(){
         assert(_fd);
         ::close(_fd);
         _fd = 0;
-        printf("close serial: %s\n", description.c_str());
+        std::cout << "[HM_RTK] Serial port closed: " << description << std::endl;
         description.clear();
 
         return 0;

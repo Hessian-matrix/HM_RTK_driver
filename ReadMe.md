@@ -40,7 +40,7 @@
   
 以下是外参标定工具需要，如果不标定外参可忽略。 
 - glog  # 实测 glog-0.6.0
-- ceres # 实测 2.1.0
+- ceres # 推荐使用3rdParty/ceres-solver子模块自动编译（无需安装libceres-dev；若禁用子模块则需自行安装），3rdParty/ceres-solver是在arm平台上构建的，如果是其他平台需要自行编译ceres2.1，然后install到3rdParty/ceres-solver目录，或者改为find_package模式。
 
 ## 编译
 
@@ -54,7 +54,7 @@ cd HM_RTK_Driver_ws/src
 git clone https://github.com/Hessian-matrix/HM_RTK_driver
 cd HM_RTK_driver
 
-# 3. 初始化并更新所有submodule（包括Sophus库）
+# 3. 初始化并更新所有submodule（包括Sophus等）
 git submodule update --init --recursive
 
 # 4. 编译
@@ -74,6 +74,8 @@ git submodule update --init --recursive
 
 ### Submodule说明
 - **Sophus**: 用于SE3（6DOF变换）表示，支持6DOF RTK模式
+- **ceres-solver**: 用于外参优化（默认优先使用`3rdParty/ceres-solver`；也可切到工作空间devel/install或系统的Ceres）
+- `HM_RTK_USE_BUNDLED_CERES=ON`（默认）：优先使用`3rdParty/ceres-solver`；设为`OFF`则仅使用工作空间/系统的Ceres
 - **gnss_comm**: GNSS工具库
 - **ntrip**: NTRIP客户端库
 

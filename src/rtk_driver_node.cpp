@@ -204,7 +204,7 @@ int main(int argc, char **argv) {
             {
                 std::string ret = hm_serial.readline(500);
                 std::string unicore = "#" + ret;
-                if(unicore.find("AGRICA") != std::string::npos)
+                if(unicore.find("AGRIC") != std::string::npos)
                 {
                     StringMsg msg;
                     msg.data = unicore;

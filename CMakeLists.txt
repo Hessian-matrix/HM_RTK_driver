@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 project(hm_rtk)
 
 set(CMAKE_BUILD_TYPE "Release") # Release, Debug or RelWithDebInfo
-
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # 检测ROS版本
 if(DEFINED ENV{ROS_VERSION})
     set(ROS_VERSION $ENV{ROS_VERSION})
@@ -57,11 +57,63 @@ endif()
 #ntrip
 add_subdirectory(3rdParty/ntrip)
 
-# 第三方库配置 - 使用更通用的查找方式
-find_package(Eigen3 REQUIRED)
-# set(Glog_DIR "/home/ll/C/Libs/glog/glog-0.6.0/install/lib/cmake/glog/")
-# set(Ceres_DIR "/home/ll/C/Libs/ceres-solver/ceres-solver-2.2.0/install/lib/cmake/Ceres/")
-find_package(Ceres REQUIRED)
+# 第三方库配置 - 使用相对路径，支持工作空间移动
+set(HM_RTK_THIRDPARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdParty")
+set(HM_RTK_CERES_DIR "${HM_RTK_THIRDPARTY_DIR}/ceres_solver")
+
+# Eigen3：优先使用本地拷贝（可移动）
+set(Eigen3_DIR "${HM_RTK_CERES_DIR}/share/eigen3/cmake" CACHE PATH "Eigen3 CMake dir" FORCE)
+find_package(Eigen3 REQUIRED NO_MODULE)
+
+# Ceres 依赖：尽量自动定位 glog/gflags 的 CMake 配置
+set(_HM_RTK_GLOG_DIR_CANDIDATES
+    "${HM_RTK_THIRDPARTY_DIR}/glog/lib/cmake/glog"
+    "${HM_RTK_THIRDPARTY_DIR}/glog/lib64/cmake/glog"
+    "/usr/local/lib/cmake/glog"
+    "/usr/local/lib64/cmake/glog"
+    "/usr/lib/cmake/glog"
+    "/usr/lib64/cmake/glog"
+)
+if(CMAKE_LIBRARY_ARCHITECTURE)
+    list(APPEND _HM_RTK_GLOG_DIR_CANDIDATES
+        "/usr/local/lib/${CMAKE_LIBRARY_ARCHITECTURE}/cmake/glog"
+        "/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/cmake/glog")
+endif()
+if(NOT glog_DIR)
+    foreach(_dir IN LISTS _HM_RTK_GLOG_DIR_CANDIDATES)
+        if(EXISTS "${_dir}/glog-config.cmake" OR EXISTS "${_dir}/glogConfig.cmake")
+            set(glog_DIR "${_dir}" CACHE PATH "glog CMake dir" FORCE)
+            break()
+        endif()
+    endforeach()
+endif()
+
+set(_HM_RTK_GFLAGS_DIR_CANDIDATES
+    "${HM_RTK_THIRDPARTY_DIR}/gflags/lib/cmake/gflags"
+    "${HM_RTK_THIRDPARTY_DIR}/gflags/lib64/cmake/gflags"
+    "/usr/local/lib/cmake/gflags"
+    "/usr/local/lib64/cmake/gflags"
+    "/usr/lib/cmake/gflags"
+    "/usr/lib64/cmake/gflags"
+)
+if(CMAKE_LIBRARY_ARCHITECTURE)
+    list(APPEND _HM_RTK_GFLAGS_DIR_CANDIDATES
+        "/usr/local/lib/${CMAKE_LIBRARY_ARCHITECTURE}/cmake/gflags"
+        "/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/cmake/gflags")
+endif()
+if(NOT gflags_DIR)
+    foreach(_dir IN LISTS _HM_RTK_GFLAGS_DIR_CANDIDATES)
+        if(EXISTS "${_dir}/gflags-config.cmake" OR EXISTS "${_dir}/gflagsConfig.cmake")
+            set(gflags_DIR "${_dir}" CACHE PATH "gflags CMake dir" FORCE)
+            break()
+        endif()
+    endforeach()
+endif()
+
+# Ceres：复用本地 CMake 配置，自动带出依赖
+set(Ceres_DIR "${HM_RTK_CERES_DIR}/lib/cmake/Ceres" CACHE PATH "Ceres CMake dir" FORCE)
+find_package(Ceres REQUIRED CONFIG)
+
 find_package(Boost REQUIRED COMPONENTS regex)
 
 include_directories(
@@ -93,10 +145,13 @@ add_executable(calib_rtk_slam_node
 )
 
 if(ROS_VERSION EQUAL 1)
-    target_link_libraries(calib_rtk_slam_node ${ROS_LIBRARIES} ${CERES_LIBRARIES} ${GLOG_LIBRARIES})
+    target_link_libraries(calib_rtk_slam_node
+        ${ROS_LIBRARIES}
+        ${CERES_LIBRARIES})
 else()
     ament_target_dependencies(calib_rtk_slam_node ${ROS_DEPENDENCIES})
-    target_link_libraries(calib_rtk_slam_node ${CERES_LIBRARIES} ${GLOG_LIBRARIES})
+    target_link_libraries(calib_rtk_slam_node
+        ${CERES_LIBRARIES})
 endif()
 
 # ROS2特有配置
